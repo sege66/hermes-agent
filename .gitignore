@@ -62,3 +62,6 @@ mini-swe-agent/
 .direnv/
 result
 website/static/api/skills-index.json
+
+# External nested research/worktree checkouts
+/tinker-atropos/
