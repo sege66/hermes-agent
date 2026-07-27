@@ -841,6 +841,16 @@ def _run_prompt_submit(
                 sid, session, st, text, display_kind, display_metadata)
             payload, raw, status = _complete_turn_payload(session, st, status_note, cols)
             _emit("message.complete", sid, payload)
+
+            # Push this desktop-typed turn to Telegram.  Best-effort: delivery
+            # must never block or fail the desktop turn-completion path.
+            try:
+                from hermes_cli import desktop_telegram_mirror
+
+                desktop_telegram_mirror.mirror_turn(text, raw, status)
+            except Exception:
+                pass
+
             goal_followup = _goal_followup_after_turn(sid, session, st.result, status, raw)
             if status == "complete":
                 _after_complete_turn(sid, session, st, raw)
