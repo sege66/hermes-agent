@@ -96,6 +96,17 @@ _JOBS_LOCK_TIMEOUT_SECONDS = 30.0
 OUTPUT_DIR = CRON_DIR / "output"
 ONESHOT_GRACE_SECONDS = 120
 
+# Append-only log of what cron jobs actually delivered to a chat (Telegram etc.).
+# Powers the desktop chat's read-only cron mirror — script jobs deliver stdout
+# without creating an agent session, so a session-derived feed misses them; this
+# captures every real delivery uniformly. Bounded; single gateway process writes.
+DELIVERIES_FILE = CRON_DIR / "deliveries.jsonl"
+MAX_DELIVERIES = 200
+_deliveries_lock = threading.Lock()
+# Some no_agent scripts colorize stdout; strip ANSI escapes so the mirror reads
+# clean (terminal color codes would otherwise render as literal garbage).
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
 
 @dataclass(frozen=True)
 class _CronStorePaths:
@@ -3254,7 +3265,76 @@ def save_job_output(job_id: str, output: str):
     return output_file
 
 
-# --- Skill reference rewriting (curator integration) ---
+def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
+    """Append one delivered cron message to the deliveries log (best-effort).
+
+    Called from the delivery path once a real (non-local) target is resolved, so
+    the log mirrors what landed in the chat. Read-modify-write under a lock keeps
+    it bounded to the newest ``MAX_DELIVERIES``; deliveries are infrequent so the
+    rewrite cost is negligible. Never raises — a logging failure must not break
+    delivery.
+    """
+    try:
+        text = _ANSI_RE.sub("", text or "").strip()
+        if not text:
+            return
+        entry = {
+            "ts": _hermes_now().timestamp(),
+            "job_id": job_id,
+            "job_name": job_name or job_id,
+            "text": text,
+        }
+        with _deliveries_lock:
+            ensure_dirs()
+            existing = read_cron_deliveries(MAX_DELIVERIES - 1, _locked=True)
+            # read_cron_deliveries returns newest-first; persist oldest-first.
+            lines = [json.dumps(e, ensure_ascii=False) for e in reversed(existing)]
+            lines.append(json.dumps(entry, ensure_ascii=False))
+            fd, tmp_path = tempfile.mkstemp(dir=str(CRON_DIR), suffix=".tmp", prefix=".deliveries_")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                atomic_replace(tmp_path, DELIVERIES_FILE)
+                _secure_file(DELIVERIES_FILE)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+                raise
+    except Exception as exc:  # never break delivery over a logging miss
+        logger.warning("record_cron_delivery failed for %s: %s", job_id, exc)
+
+
+def read_cron_deliveries(limit: int = 50, _locked: bool = False) -> List[Dict[str, Any]]:
+    """Return the most recent cron deliveries, newest first (best-effort)."""
+    def _read() -> List[Dict[str, Any]]:
+        if not DELIVERIES_FILE.exists():
+            return []
+        out: List[Dict[str, Any]] = []
+        with open(DELIVERIES_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                with contextlib.suppress(ValueError):
+                    out.append(json.loads(line))
+        out.reverse()  # newest first
+        return out[: max(0, limit)]
+
+    try:
+        if _locked:
+            return _read()
+        with _deliveries_lock:
+            return _read()
+    except Exception as exc:
+        logger.warning("read_cron_deliveries failed: %s", exc)
+        return []
+
+
+# =============================================================================
+# Skill reference rewriting (curator integration)
+# =============================================================================
 
 def _canonical_skill_ref(raw: Any) -> str:
     """Reduce a job skill reference (possibly an absolute path) to the bare name the curator matches

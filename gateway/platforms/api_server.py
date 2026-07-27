@@ -1539,6 +1539,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             ("GET", "/v1/skills", self._handle_skills),
             ("GET", "/v1/toolsets", self._handle_toolsets),
             ("GET", "/api/sessions", self._handle_list_sessions),
+            ("GET", "/api/cron/deliveries", self._handle_cron_deliveries),
             ("POST", "/api/sessions", self._handle_create_session),
             ("GET", "/api/sessions/{session_id}", self._handle_get_session),
             ("PATCH", "/api/sessions/{session_id}", self._handle_patch_session),
@@ -2802,6 +2803,24 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         return web.json_response({
             "object": "list", "data": [self._session_response(s) for s in sessions],
             "limit": limit, "offset": offset, "has_more": windowed >= limit})
+
+    @_require_auth
+    async def _handle_cron_deliveries(self, request: "web.Request") -> "web.Response":
+        """GET /api/cron/deliveries -- recent cron-job chat deliveries, newest first.
+
+        Powers the desktop chat's read-only cron mirror. Covers script jobs too
+        (they deliver stdout without an agent session), which a session-derived
+        feed misses.
+        """
+        limit = self._parse_nonnegative_int(request.query.get("limit"), default=50, maximum=200)
+        try:
+            from cron.jobs import read_cron_deliveries
+
+            deliveries = read_cron_deliveries(limit)
+        except Exception as exc:
+            logger.warning("GET /api/cron/deliveries failed: %s", exc)
+            deliveries = []
+        return web.json_response({"object": "list", "data": deliveries, "limit": limit})
 
     @_require_auth
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
