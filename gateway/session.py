@@ -6,7 +6,9 @@ import hashlib
 import logging
 import os
 import json
+import re
 import threading
+import urllib.request
 from pathlib import Path
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, fields
@@ -21,6 +23,103 @@ from gateway.session_transcript import SessionTranscriptMixin
 
 logger = logging.getLogger(__name__)
 
+# ── Desktop live-update bridge (ki66 local feature) ──────────────────────
+# The always-on gateway owns state.db, but the desktop app renders from its own
+# process. Without a nudge, a turn that arrives on Telegram lands in the DB and
+# the open desktop window shows nothing until the user reloads. POST to the
+# desktop backend's loopback ``/internal/session-updated``, which re-broadcasts
+# ``session.external_updated`` over its WS so the UI refetches.
+#
+# ponytail: fire-and-forget on a daemon thread with a ~120ms timeout — a
+# missed refresh nudge is cosmetic, a blocked transcript write is not.
+_DESKTOP_SESSION_EVENT_PORTS = (*range(9120, 9131), 9119)
+_DESKTOP_SESSION_EVENT_TIMEOUT_S = 0.12
+_DESKTOP_READY_RE = re.compile(rb"HERMES_(?:DASHBOARD|BACKEND)_READY port=(\d+)")
+_LOCAL_SOURCES = frozenset({"", "cli", "tui"})
+
+
+def _is_external_session_source(source: Any) -> bool:
+    """True when a session originated off-box (telegram, discord, …).
+
+    Desktop- and CLI-originated turns already paint in their own process; only
+    external sources need the cross-process refresh nudge.
+    """
+    return str(source or "").strip().lower() not in _LOCAL_SOURCES
+
+
+def _desktop_ready_ports_from_log() -> List[int]:
+    """Ports the desktop backend most recently announced, newest first."""
+    log_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "logs" / "desktop.log"
+    try:
+        with log_path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 65536), os.SEEK_SET)
+            data = fh.read()
+    except Exception:
+        return []
+
+    ports: List[int] = []
+    for match in _DESKTOP_READY_RE.finditer(data):
+        try:
+            ports.append(int(match.group(1)))
+        except ValueError:
+            continue
+    return list(reversed(ports[-3:]))
+
+
+def _desktop_session_event_urls() -> List[str]:
+    configured = (os.environ.get("HERMES_DESKTOP_SESSION_EVENT_URL") or "").strip()
+    if configured:
+        return [configured]
+
+    ports: List[int] = []
+    for port in [*_desktop_ready_ports_from_log(), *_DESKTOP_SESSION_EVENT_PORTS]:
+        if port not in ports:
+            ports.append(port)
+
+    return [f"http://127.0.0.1:{port}/internal/session-updated" for port in ports]
+
+
+def _notify_desktop_session_updated(
+    session_id: str,
+    role: Any = None,
+    previous_session_id: Optional[str] = None,
+) -> None:
+    if not session_id:
+        return
+
+    payload = json.dumps(
+        {
+            "session_id": session_id,
+            "role": role,
+            "previous_session_id": previous_session_id,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    def _send() -> None:
+        for url in _desktop_session_event_urls():
+            request = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(
+                    request,
+                    timeout=_DESKTOP_SESSION_EVENT_TIMEOUT_S,
+                ):
+                    return
+            except Exception:
+                continue
+
+    threading.Thread(
+        target=_send,
+        name="hermes-desktop-session-notify",
+        daemon=True,
+    ).start()
 
 # -- PII redaction helpers --------------------------------------------------------------------
 

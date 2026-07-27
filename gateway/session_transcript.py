@@ -98,12 +98,41 @@ class SessionTranscriptMixin:
         """Return the lock that serializes pending-queue drain boundaries."""
         return self._lazy("_transcript_drain_lock", threading.RLock)
 
+    def _notify_desktop_if_external(self, session_id: str, message: Dict[str, Any]) -> None:
+        """Nudge the desktop app to refetch when an off-box turn lands.
+
+        ki66: hooked at this single choke point rather than at each DB write
+        site. Every transcript append funnels through append_to_transcript.
+        """
+        try:
+            from gateway.session import (
+                _is_external_session_source,
+                _notify_desktop_session_updated,
+            )
+            try:
+                db = self._db_for_session_id(session_id) or getattr(self, "_db", None)
+            except Exception:
+                db = getattr(self, "_db", None)
+            if not db:
+                return
+            session = db.get_session(session_id) or {}
+            if _is_external_session_source(session.get("source")):
+                _notify_desktop_session_updated(session_id, message.get("role"))
+        except Exception as exc:
+            logger.debug("Desktop session update notification failed: %s", exc)
+
     def append_to_transcript(self, session_id: str, message: Dict[str, Any], skip_db: bool = False) -> None:
         """Serialize transcript draining across queue migration boundaries."""
-        if not self._db_for_session_id(session_id) or skip_db:
+        if skip_db:
+            # External adapters may have already persisted the message, but the
+            # desktop still needs the live update event.
+            self._notify_desktop_if_external(session_id, message)
+            return
+        if not self._db_for_session_id(session_id):
             return
         with self._get_transcript_drain_lock():
             self._append_to_transcript_serialized(self._follow_reroutes(session_id), message)
+        self._notify_desktop_if_external(session_id, message)
 
     def _follow_reroutes(self, session_id: str) -> str:
         """Follow the compression reroute chain (cycle-guarded)."""

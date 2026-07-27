@@ -37,6 +37,7 @@ from hermes_cli.config import load_config
 
 try:
     from fastapi import FastAPI, HTTPException, Request
+    from pydantic import BaseModel
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
 except ImportError:
@@ -977,6 +978,44 @@ app.include_router(_tools_routes.router)
 app.include_router(_analytics_routes.router)
 app.include_router(_chat_ws_routes.router)
 app.include_router(_dashboard_ui_routes.router)
+
+
+class ExternalSessionUpdated(BaseModel):
+    session_id: str
+    role: Optional[str] = None
+    previous_session_id: Optional[str] = None
+
+
+@app.post("/internal/session-updated")
+async def notify_external_session_updated(request: Request, body: ExternalSessionUpdated):
+    """Loopback-only bridge for gateway processes that update state.db.
+
+    ki66: the always-on gateway owns state.db but runs in a different process
+    from this desktop backend, so a Telegram turn lands in SQLite with nothing
+    to tell the open UI. The gateway POSTs here; we re-broadcast over the WS
+    the desktop is already listening on, and the client refetches.
+    """
+    client_host = request.client.host if request.client else ""
+    if client_host not in _LOOPBACK_HOST_VALUES:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    session_id = (body.session_id or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    from tui_gateway.server import _broadcast_global_event
+
+    await asyncio.to_thread(
+        _broadcast_global_event,
+        "session.external_updated",
+        {
+            "stored_session_id": session_id,
+            "role": body.role,
+            "previous_session_id": body.previous_session_id,
+        },
+    )
+    return {"ok": True}
+
 
 # Plugin API routes and the dashboard auth routes (/login, /auth/*, /api/auth/*)
 # mount before the SPA catch-all so /{full_path:path} doesn't swallow them. Auth
