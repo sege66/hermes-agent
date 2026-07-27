@@ -8,6 +8,7 @@ export {
   completeOpenTimelineParts,
   dedupeRepeatedTextInParts,
   mergeFinalAssistantText,
+  prependMarkerLine,
   reasoningPart,
   renderMediaTags,
   textPart

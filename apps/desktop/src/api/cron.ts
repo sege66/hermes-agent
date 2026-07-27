@@ -15,6 +15,24 @@ import { connectionScoped, hermesApi, profileScoped, STARTUP_REQUEST_TIMEOUT_MS 
 // synchronous long-operation endpoint rather than weakening all API timeouts.
 const CRON_TRIGGER_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000
 
+export interface CronDelivery {
+  ts: number
+  job_id: string
+  job_name: string
+  text: string
+}
+
+export async function listCronDeliveries(limit = 50): Promise<CronDelivery[]> {
+  const result = await hermesApi<{ data?: CronDelivery[] }>({
+    ...profileScoped(),
+    ...connectionScoped(),
+    path: `/api/cron/deliveries?limit=${limit}`,
+    timeoutMs: STARTUP_REQUEST_TIMEOUT_MS
+  })
+
+  return result.data ?? []
+}
+
 // Cron jobs are stored per-profile (<HERMES_HOME>/cron/jobs.json), and the
 // backend's list endpoint defaults to 'all'. Pass a concrete profile key to
 // list just that profile's jobs, or 'all' for the unified cross-profile view.

@@ -885,9 +885,21 @@ export function ContribWiring({ children }: { children: ReactNode }) {
         return
       }
 
+      // ki66: a turn that arrived on Telegram was written to state.db by the
+      // always-on gateway process, not by this window's runtime — nothing in
+      // the normal event flow carries it. Refetch instead of routing it
+      // through the desktop handler, which expects locally-originated frames.
+      if (event.type === 'session.external_updated') {
+        void refreshMessagingSessions()
+          .then(() => refreshActiveMessagingTranscript())
+          .catch(() => undefined)
+
+        return
+      }
+
       handleDesktopGatewayEvent(event)
     },
-    [handleDesktopGatewayEvent, startFreshSessionDraft]
+    [handleDesktopGatewayEvent, refreshActiveMessagingTranscript, refreshMessagingSessions, startFreshSessionDraft]
   )
 
   useGatewayBoot({

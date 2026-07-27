@@ -71,6 +71,8 @@ import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { useSessionView } from './session-view'
+import { useCronMergeMessages } from './use-cron-merge'
+import { mergeCronMessages } from './merge-cron-messages'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { routedSessionIsLoading, threadLoadingState } from './thread-loading'
 import {
@@ -246,7 +248,16 @@ function ChatRuntimeBoundary({
   const view = useSessionView()
   const runtimeId = useStore(view.$runtimeId)
   const storeMessages = useMessagesWhileVisible(view.$messages)
-  const messages = suppressMessages ? NO_MESSAGES : storeMessages
+  // ki66: interleave the read-only cron mirror. Pure-script cron jobs deliver
+  // stdout straight to Telegram without creating an agent session, so the
+  // session-derived store misses them entirely; /api/cron/deliveries backfills
+  // those into the primary thread. Merged before windowing so cron deliveries
+  // take part in the transcript window like any other message.
+  const cronMessages = useCronMergeMessages(view.kind === 'primary')
+  const messages = useMemo(
+    () => (suppressMessages ? NO_MESSAGES : mergeCronMessages(storeMessages, cronMessages)),
+    [cronMessages, storeMessages, suppressMessages]
+  )
 
   const [windowPages, setWindowPages] = useState(1)
   const [windowSessionKey, setWindowSessionKey] = useState(runtimeId)

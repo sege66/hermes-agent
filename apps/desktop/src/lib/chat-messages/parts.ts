@@ -10,6 +10,16 @@ export function reasoningPart(text: string, timestamp?: number): ChatMessagePart
   return { type: 'reasoning', text, ...(timestamp !== undefined ? { timestamp } : {}) }
 }
 
+export function prependMarkerLine(parts: ChatMessagePart[], label: string): ChatMessagePart[] {
+  const [first, ...rest] = parts
+
+  if (first?.type === 'text') {
+    return [textPart(`${label}\n\n${first.text}`), ...rest]
+  }
+
+  return [textPart(label), ...parts]
+}
+
 const MEDIA_LINE_RE = /(^|\n)[\t ]*[`"']?MEDIA:\s*(?<line>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)[`"']?[\t ]*(\n|$)/g
 
 const MEDIA_TAG_RE = /[`"']?MEDIA:\s*(?<inline>`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)[`"']?/g
