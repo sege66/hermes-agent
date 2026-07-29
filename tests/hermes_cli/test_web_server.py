@@ -1440,6 +1440,17 @@ class TestWebServerEndpoints:
 
 
 
+    def test_cron_deliveries_are_available_to_the_desktop(self, monkeypatch):
+        import cron.jobs as cron_jobs
+
+        expected = [{"ts": 1.0, "job_id": "job-1", "job_name": "Brief", "text": "Done"}]
+        monkeypatch.setattr(cron_jobs, "read_cron_deliveries", lambda limit: expected[:limit])
+
+        resp = self.client.get("/api/cron/deliveries?limit=1")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"object": "list", "data": expected, "limit": 1}
+
 
     def _schema_provider_options(self, key):
         resp = self.client.get("/api/config/schema")

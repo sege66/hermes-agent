@@ -208,6 +208,15 @@ def _delete_cron_job_sync(job_id: str, profile: Optional[str] = None):
 _CRON_FIRE_RETRY_AFTER_SECONDS = 60
 
 
+@router.get("/api/cron/deliveries")
+async def list_cron_deliveries(limit: int = 50):
+    from cron import jobs as cron_jobs
+
+    limit = max(0, min(limit, 200))
+    deliveries = await _run_cron_dashboard_io(cron_jobs.read_cron_deliveries, limit)
+    return {"object": "list", "data": deliveries, "limit": limit}
+
+
 @router.get("/api/cron/jobs")
 async def list_cron_jobs(profile: str = "all"):
     return await _run_cron_dashboard_io(_list_cron_jobs_sync, profile)
