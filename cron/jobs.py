@@ -1690,6 +1690,41 @@ def _next_run_or_reject_past_oneshot(
     return next_run_at
 
 
+def _strict_cron_model_pinning_enabled() -> bool:
+    """Return whether active LLM cron jobs require explicit provider/model."""
+    from hermes_cli.config import load_config_readonly
+
+    config = load_config_readonly()
+    cron_config = config.get("cron") or {}
+    return (
+        isinstance(cron_config, dict)
+        and cron_config.get("require_explicit_provider_model") is True
+    )
+
+
+def _validate_explicit_cron_inference(
+    *,
+    provider: Any,
+    model: Any,
+    no_agent: Any,
+) -> None:
+    """Fail closed when strict policy would persist an unpinned LLM job."""
+    if bool(no_agent) or not _strict_cron_model_pinning_enabled():
+        return
+
+    missing = []
+    if _normalize_job_optional_text(provider) is None:
+        missing.append("provider")
+    if _normalize_job_optional_text(model) is None:
+        missing.append("model")
+    if missing:
+        raise ValueError(
+            "Active LLM cron jobs require explicit provider and model when "
+            "cron.require_explicit_provider_model=true; missing: "
+            + ", ".join(missing)
+        )
+
+
 def create_job(
     prompt: Optional[str],
     schedule: str,
@@ -1748,6 +1783,11 @@ def create_job(
     normalized_reasoning_effort = _normalize_reasoning_effort(reasoning_effort)
 
     _validate_job_mode_invariants(f["monitor_script"], f["monitor_url"], f["no_agent"], f["script"])
+    _validate_explicit_cron_inference(
+        provider=f["provider"],
+        model=f["model"],
+        no_agent=f["no_agent"],
+    )
     prompt_text = _coerce_job_text(prompt).strip()
     if not prompt_text and not f["script"] and not normalized_skills:
         raise ValueError(EMPTY_PAYLOAD_ERROR)
@@ -1993,6 +2033,20 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
         inference_fields_changed = bool(
             {"provider", "model", "base_url", "no_agent"}.intersection(updates)
         ) and _normalized_inference_axes(updated) != previous_inference_axes
+
+        emergency_pause = (
+            not bool(updated.get("enabled", True))
+            and updated.get("state") == "paused"
+            and set(updates).issubset(
+                {"enabled", "state", "paused_at", "paused_reason"}
+            )
+        )
+        if not emergency_pause:
+            _validate_explicit_cron_inference(
+                provider=updated.get("provider"),
+                model=updated.get("model"),
+                no_agent=updated.get("no_agent"),
+            )
 
         if "schedule" in updates:
             _apply_schedule_update(updated, updates, job_id)

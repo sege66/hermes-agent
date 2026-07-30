@@ -1648,6 +1648,9 @@ DEFAULT_CONFIG = {
         # platforms are configured. Failure -> last_status=blocked_config, ONE alert, no LLM call.
         # False = fail during the run instead.
         "preflight": True,
+        # When enabled, every active LLM cron job must persist both provider
+        # and model. Script-only no-agent jobs are exempt.
+        "require_explicit_provider_model": False,
         # Default model for cron jobs (WHAT model runs). Fire-time resolution: per-job pin >
         # cron.model > the job's creation-time snapshot > model.default. An unpinned job keeps
         # running on the model it was created under when model.default later changes; cron.model
