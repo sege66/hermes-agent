@@ -4003,13 +4003,86 @@ async function releaseBackendLock(updateRoot, tag) {
   return { unlocked: false }
 }
 
-// applyUpdates — hand off to the installer's --update flow, then exit.
+async function handOffMacUpdateToCoordinator() {
+  const coordinator = path.join(HERMES_HOME, 'bin', 'hermes-update-coordinator')
+  const updateRoot = resolveUpdateRoot()
+  const targetApp = runningAppBundle()
+
+  if (!IS_MAC || !fileExists(coordinator) || path.resolve(targetApp || '') !== '/Applications/Hermes.app') {
+    return null
+  }
+
+  const { branch: configuredBranch } = readDesktopUpdateConfig()
+  const branch = await resolveHealedBranch(updateRoot, configuredBranch || DEFAULT_UPDATE_BRANCH)
+  const lock = await releaseBackendLockForUpdate(updateRoot)
+
+  if (!lock.unlocked) {
+    const message =
+      'Update aborted: another process is holding the Hermes install open ' +
+      '(a second Hermes window or a terminal running hermes?). Close it and retry.'
+
+    emitUpdateProgress({ stage: 'error', message, percent: null })
+    startHermes().catch(() => {})
+
+    return { ok: false, error: message }
+  }
+
+  const args = [
+    'update',
+    '--source',
+    'desktop-app',
+    '--retry-once',
+    '--',
+    '--yes',
+    '--gateway',
+    '--force',
+    '--branch',
+    branch
+  ]
+
+  const venvBin = path.join(updateRoot, 'venv', 'bin')
+
+  const child = spawn(coordinator, args, {
+    cwd: updateRoot,
+    env: {
+      ...process.env,
+      HERMES_HOME,
+      HERMES_UPDATE_COORDINATOR_OWNS_DESKTOP: '1',
+      PATH: pathWithHermesManagedNode(venvBin)
+    },
+    detached: true,
+    stdio: 'ignore'
+  })
+
+  child.unref()
+
+  if (Number.isInteger(child.pid)) {
+    writeUpdateMarker(HERMES_HOME, child.pid)
+  }
+
+  rememberLog(`[updates] handed complete macOS update to coordinator: ${coordinator} ${args.join(' ')}`)
+  emitUpdateProgress({
+    stage: 'restart',
+    message:
+      'Updating Hermes — this window will close. The verified coordinator will rebuild and reopen it automatically.',
+    percent: 100
+  })
+  isQuittingForHandoff = true
+  setTimeout(() => {
+    app.quit()
+  }, UPDATE_HANDOFF_DWELL_MS)
+
+  return { ok: true, handedOff: true, updater: coordinator }
+}
+
+// applyUpdates — hand off to the external coordinator or native installer,
+// then exit. The standard macOS app path is wholly owned by the coordinator;
+// Windows and non-standard targets retain the signed installer fallback.
 //
 // The desktop is a pure consumer: it does NOT git pull / pip install / rebuild
-// itself (the old open-coded git dance lived here and drifted from
-// `hermes update`). Instead we spawn the staged Hermes-Setup binary with
-// --update and quit, so it can run `hermes update` (which refuses while we
-// hold the venv shim) and rebuild the desktop with our exe already gone.
+// itself. Standard macOS installs hand the whole transaction to the external
+// coordinator; Windows and non-standard targets fall back to the staged
+// Hermes-Setup binary and quit before that updater mutates the installation.
 //
 // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
 // only this apply action changed.
@@ -4021,6 +4094,12 @@ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
   updateInFlight = true
 
   try {
+    const coordinated = await handOffMacUpdateToCoordinator()
+
+    if (coordinated) {
+      return coordinated
+    }
+
     const updater = resolveUpdaterBinary()
 
     if (!updater && !IS_WINDOWS) {

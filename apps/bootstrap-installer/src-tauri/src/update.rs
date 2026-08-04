@@ -6,10 +6,10 @@
 //!   1. wait for the old Hermes desktop process to fully exit (so both the
 //!      venv shim and packaged app.asar are free; otherwise `hermes update`
 //!      or repair bootstrap can race locked files),
-//!   2. run `hermes update --yes --gateway` (Python/repo update; this does NOT
-//!      rebuild apps/desktop by design — see cmd_update in hermes_cli/main.py),
-//!   3. run `hermes desktop --build-only` (the rebuild step update skips),
-//!   4. launch the freshly-built desktop (reuses bootstrap::launch logic).
+//!   2. on the standard macOS install, hand the complete update transaction to
+//!      the external coordinator (repo update, rebuild, swap, verification,
+//!      rollback); other platforms retain the native staged flow below,
+//!   3. otherwise run `hermes update --yes --gateway`, rebuild, and launch.
 //!
 //! We reuse the `BootstrapEvent` channel + the existing progress UI by
 //! emitting a synthetic multi-stage manifest (handoff → update → rebuild, plus
@@ -377,6 +377,86 @@ async fn run_update(app: AppHandle) -> Result<()> {
         Some(started.elapsed().as_millis() as u64),
         None,
     );
+
+    // The macOS Desktop button used to run the protected source update through
+    // the external coordinator, then return here and perform a second, native
+    // rebuild/app swap outside the coordinator's post-guard. That left the
+    // final installed bundle beyond the single transaction boundary. For the
+    // canonical /Applications install, delegate the whole operation now and
+    // return immediately; the coordinator rebuilds, swaps, verifies, rolls back
+    // on failure, and relaunches Hermes. Non-standard targets keep the native
+    // fallback so we never redirect an explicitly chosen app path.
+    #[cfg(target_os = "macos")]
+    {
+        let coordinator = hermes_home.join("bin").join("hermes-update-coordinator");
+        if should_delegate_macos_update(target_app.as_deref(), &coordinator) {
+            emit_log(
+                &app,
+                Some("update"),
+                LogStream::Stdout,
+                "[update] delegating the complete macOS transaction to the external coordinator",
+            );
+            emit_stage(&app, "update", StageState::Running, None, None);
+            let started = Instant::now();
+            let coordinator_args = coordinator_update_args(&update_branch);
+            let mut coordinator_env = update_child_env(&install_root);
+            coordinator_env.push((
+                "HERMES_UPDATE_COORDINATOR_OWNS_DESKTOP".to_string(),
+                OsString::from("1"),
+            ));
+            let coordinated = run_streamed(
+                &app,
+                &coordinator,
+                &coordinator_args,
+                &install_root,
+                &coordinator_env,
+                Some("update"),
+            )
+            .await?;
+            let duration_ms = started.elapsed().as_millis() as u64;
+
+            if coordinated.exit_code != Some(0) {
+                let msg = format!(
+                    "external update coordinator failed (exit {:?}); the prior Desktop bundle was retained or restored",
+                    coordinated.exit_code
+                );
+                emit_stage(
+                    &app,
+                    "update",
+                    StageState::Failed,
+                    Some(duration_ms),
+                    Some(msg.clone()),
+                );
+                emit(
+                    &app,
+                    BootstrapEvent::Failed {
+                        stage: Some("update".into()),
+                        error: msg.clone(),
+                    },
+                );
+                return Err(anyhow!(msg));
+            }
+
+            emit_stage(
+                &app,
+                "update",
+                StageState::Succeeded,
+                Some(duration_ms),
+                None,
+            );
+            emit_stage(&app, "rebuild", StageState::Succeeded, None, None);
+            emit_stage(&app, "install", StageState::Succeeded, None, None);
+            emit(
+                &app,
+                BootstrapEvent::Complete {
+                    install_root: install_root.to_string_lossy().into_owned(),
+                    marker: None,
+                },
+            );
+            app.exit(0);
+            return Ok(());
+        }
+    }
 
     // ---- stage 2: hermes update -----------------------------------------
     // Pass --branch so `hermes update` targets the branch this installer was
@@ -1085,6 +1165,27 @@ where
     arg_value_from_args(args, "--branch")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn coordinator_update_args(branch: &str) -> Vec<String> {
+    vec![
+        "update".to_string(),
+        "--source".to_string(),
+        "desktop-setup".to_string(),
+        "--retry-once".to_string(),
+        "--".to_string(),
+        "--yes".to_string(),
+        "--gateway".to_string(),
+        "--force".to_string(),
+        "--branch".to_string(),
+        branch.to_string(),
+    ]
+}
+
+fn should_delegate_macos_update(target_app: Option<&Path>, coordinator: &Path) -> bool {
+    cfg!(target_os = "macos")
+        && target_app == Some(Path::new("/Applications/Hermes.app"))
+        && coordinator.is_file()
 }
 
 fn target_app_from_args<I, S>(args: I) -> Option<PathBuf>
@@ -1807,6 +1908,39 @@ mod tests {
             Some(PathBuf::from("/Applications/Hermes.app"))
         );
         assert_eq!(target_app_from_args(["--target-app", "/tmp/not-an-app"]), None);
+    }
+
+    #[test]
+    fn standard_macos_update_delegates_with_complete_coordinator_contract() {
+        let base = unique_tmp_dir("external-coordinator");
+        let coordinator = base.join("hermes-update-coordinator");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(&coordinator, "test").unwrap();
+
+        assert!(should_delegate_macos_update(
+            Some(Path::new("/Applications/Hermes.app")),
+            &coordinator
+        ));
+        assert!(!should_delegate_macos_update(
+            Some(Path::new("/tmp/Hermes.app")),
+            &coordinator
+        ));
+        assert_eq!(
+            coordinator_update_args("main"),
+            vec![
+                "update",
+                "--source",
+                "desktop-setup",
+                "--retry-once",
+                "--",
+                "--yes",
+                "--gateway",
+                "--force",
+                "--branch",
+                "main",
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // Helpers for the swap tests: make a throwaway dir tree we can rename.
