@@ -25,6 +25,7 @@ from hermes_state_common import (
     FTS_STORAGE_VERSION, FTS_TOOL_FULL_CONTENT_HIGH_WATER_KEY, FTS_TRIGRAM_SQL, LEGACY_FTS_SQL,
     LEGACY_FTS_TRIGRAM_SQL, SCHEMA_SQL,
     SCHEMA_VERSION, _FTS_CJK_TRIGGERS, _FTS_TRIGGERS, _ephemeral_child_sql, _sql_json_extract, fts_rebuild_admission,
+    fts_trigram_disabled,
 )
 from hermes_state_fts import _drop_orphan_fts_shadow_tables
 from hermes_state_holders import _read_proc_argv
@@ -254,7 +255,8 @@ class SessionSchemaMixin:
         # Re-apply current DDL (legacy vs v23 as _init_schema does) so CREATE TRIGGER installs OF variants.
         base_sql, trigram_sql = _FTS_DDL[legacy_layout]
         self._ensure_fts_schema(cursor, "messages_fts", base_sql)
-        self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
+        if not fts_trigram_disabled():
+            self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
         # Only recreate the CJK trigger this migration dropped. ``_ensure_fts_cjk_schema`` soft-fails
         # (never raises), so afterwards require a narrowed trigger or durable quarantine.
         if "messages_fts_cjk_update" in to_drop:
@@ -390,6 +392,8 @@ class SessionSchemaMixin:
         for name in _FTS_TRIGRAM_TRIGGERS:
             cursor.execute(f"DROP TRIGGER IF EXISTS {name}")
         cursor.execute("DROP VIEW IF EXISTS messages_fts_trigram_src")
+        if fts_trigram_disabled():
+            return True
         if not self._ensure_fts_schema(cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL):
             return False
         # Always rebuild while schema_version is behind, even if the view already has the new
@@ -416,6 +420,7 @@ class SessionSchemaMixin:
 
     @staticmethod
     def _rebuild_fts_indexes(cursor: sqlite3.Cursor, *, legacy: bool = False, include_trigram: bool = True) -> None:
+        include_trigram = include_trigram and not fts_trigram_disabled()
         """v23+ external-content 'rebuild'. It indexes EVERY row, so the deferred-backfill
         markers are cleared or the worker would re-insert covered rows (duplicates).
         ``legacy`` (pre-v23 inline layout) has no external-content 'rebuild' source, so it
@@ -1158,7 +1163,10 @@ class SessionSchemaMixin:
                 self._fts_enabled = self._ensure_fts_schema(cursor, "messages_fts", base_sql)
                 if not self._fts_enabled:
                     return
-                self._trigram_available = self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
+                self._trigram_available = (
+                    not fts_trigram_disabled()
+                    and self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
+                )
                 self._rebuild_fts_indexes(
                     cursor, legacy=legacy_fts, include_trigram=self._trigram_available,
                 )
@@ -1174,7 +1182,10 @@ class SessionSchemaMixin:
                 self._fts_enabled = self._ensure_fts_schema(cursor, "messages_fts", base_sql)
                 if self._fts_enabled:
                     # Trigram is optional; without it CJK search falls back to LIKE.
-                    trigram_enabled = self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
+                    trigram_enabled = (
+                        not fts_trigram_disabled()
+                        and self._ensure_fts_schema(cursor, "messages_fts_trigram", trigram_sql)
+                    )
                     self._trigram_available = trigram_enabled
                     if trigram_enabled and trigram_triggers_missing:
                         self._run_admitted_startup_rebuild(
