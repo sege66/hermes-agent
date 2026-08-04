@@ -113,6 +113,15 @@ class _CronStorePaths:
     cron_dir: Path
     jobs_file: Path
     output_dir: Path
+    # ki66: chat-delivery log beside jobs.json. Optional so upstream 3-field
+    # constructors/tests keep working; derived from cron_dir when omitted.
+    deliveries_file: Optional[Path] = None
+
+    def __post_init__(self) -> None:
+        if self.deliveries_file is None:
+            object.__setattr__(
+                self, "deliveries_file", Path(self.cron_dir) / "deliveries.jsonl"
+            )
 
     @classmethod
     def for_dir(cls, cron_dir: Path) -> "_CronStorePaths":
@@ -3344,14 +3353,15 @@ def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
             # read_cron_deliveries returns newest-first; persist oldest-first.
             lines = [json.dumps(e, ensure_ascii=False) for e in reversed(existing)]
             lines.append(json.dumps(entry, ensure_ascii=False))
-            fd, tmp_path = tempfile.mkstemp(dir=str(CRON_DIR), suffix=".tmp", prefix=".deliveries_")
+            store = _current_cron_store()
+            fd, tmp_path = tempfile.mkstemp(dir=str(store.cron_dir), suffix=".tmp", prefix=".deliveries_")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
                     f.flush()
                     os.fsync(f.fileno())
-                atomic_replace(tmp_path, DELIVERIES_FILE)
-                _secure_file(DELIVERIES_FILE)
+                atomic_replace(tmp_path, store.deliveries_file)
+                _secure_file(store.deliveries_file)
             except BaseException:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
@@ -3363,10 +3373,11 @@ def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
 def read_cron_deliveries(limit: int = 50, _locked: bool = False) -> List[Dict[str, Any]]:
     """Return the most recent cron deliveries, newest first (best-effort)."""
     def _read() -> List[Dict[str, Any]]:
-        if not DELIVERIES_FILE.exists():
+        deliveries_file = _current_cron_store().deliveries_file
+        if not deliveries_file.exists():
             return []
         out: List[Dict[str, Any]] = []
-        with open(DELIVERIES_FILE, "r", encoding="utf-8") as f:
+        with open(deliveries_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
