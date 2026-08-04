@@ -1006,19 +1006,26 @@ class MoAChatCompletions:
         if not pending or "aggregator_input_messages" not in pending:
             return
         try:
-            from agent.moa_trace import save_moa_turn
+            from agent.moa_trace import emit_moa_peer_reliability, save_moa_turn
             agg_slot = pending.get("aggregator_slot") or {}
             # Inline capture (non-streaming) beats the caller's streamed text.
             agg_output = pending.get("aggregator_output")
             if agg_output is None and aggregator_output_fallback:
                 agg_output = aggregator_output_fallback
+            _ref_outs = pending.get("reference_outputs", []) or []
             save_moa_turn(
                 session_id=session_id, preset_name=pending.get("preset", ""),
-                reference_outputs=pending.get("reference_outputs", []),
+                reference_outputs=_ref_outs,
                 aggregator_label=pending.get("aggregator_label", ""), aggregator_model=agg_slot.get("model"),
                 aggregator_provider=agg_slot.get("provider"), aggregator_temperature=pending.get("aggregator_temperature"),
                 aggregator_input_messages=pending.get("aggregator_input_messages"),
                 aggregator_output=agg_output, aggregator_streamed=bool(pending.get("aggregator_streamed")),
+            )
+            # Ki66: always-on operational reliability memory (no content/PII).
+            # Independent of moa.save_traces. Best-effort; never raises.
+            emit_moa_peer_reliability(
+                preset_name=str(pending.get("preset") or ""),
+                reference_outputs=_ref_outs,
             )
         except Exception as exc:  # pragma: no cover - tracing must never break a turn
             logger.debug("MoA trace flush failed: %s", exc)
