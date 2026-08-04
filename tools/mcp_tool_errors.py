@@ -45,7 +45,8 @@ def _is_method_not_found_error(exc: BaseException) -> bool:
     """
     return _jsonrpc_matches(
         exc, (_core._JSONRPC_METHOD_NOT_FOUND,),
-        (str(_core._JSONRPC_METHOD_NOT_FOUND), "method not found", "unknown method", "not found: ping"))
+        (str(_core._JSONRPC_METHOD_NOT_FOUND), "method not found", "unknown method",
+         "not found: ping", "method not supported: ping"))
 
 
 class InvalidMcpUrlError(ValueError):
