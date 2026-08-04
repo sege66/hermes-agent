@@ -145,15 +145,12 @@ class CLIStreamMixin:
                 line_break >= min_newline_flush
                 or buf.endswith(("\n\n", ".\n", "!\n", "?\n", ":\n"))):
                 flush_text, buf = buf[: line_break + 1], buf[line_break + 1 :]
-            elif len(buf) >= target_width:
-                search_start = max(20, target_width // 2)
-                search_end = min(
-                    len(buf), max(target_width + (target_width // 3), target_width + 8))
-                cut = max(
-                    buf.rfind(b, search_start, search_end)
-                    for b in (" ", "\t", ".", "!", "?", ",", ";", ":"))
-                if cut != -1:
-                    flush_text, buf = buf[: cut + 1], buf[cut + 1 :]
+            else:
+                from cli import _cut_stream_at_display_width, _stream_display_width
+                if _stream_display_width(buf) >= target_width:
+                    chunk, rest = _cut_stream_at_display_width(buf, target_width)
+                    if chunk:
+                        flush_text, buf = chunk, rest
 
         self._reasoning_preview_buf = buf.lstrip() if flush_text else buf
         if flush_text:
