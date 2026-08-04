@@ -2735,10 +2735,8 @@ def _agent_subcommand_selected(args) -> bool:
 
 
 def _command_has_dedicated_mcp_startup(args) -> bool:
-    """acp / gateway run / cron run|tick own their MCP startup on the runtime path."""
-    return args.command == "acp" or (
-        args.command != "mcp" and _agent_subcommand_selected(args)
-    )
+    """acp / gateway run / cron run|tick / mcp serve own their MCP startup on the runtime path."""
+    return args.command == "acp" or _agent_subcommand_selected(args)
 
 
 def _should_background_mcp_startup(args) -> bool:
