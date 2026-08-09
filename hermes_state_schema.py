@@ -634,9 +634,12 @@ class SessionSchemaMixin:
             include_trigram = True
         else:
             include_trigram = trigram_present or (not legacy and self._trigram_tokenizer_available(cursor))
+        drop_trigram = include_trigram
+        # ki66: preserve the disable gate through stale recovery.
+        include_trigram = include_trigram and not fts_trigram_disabled()
 
         drop_sql = "".join(f"DROP TRIGGER IF EXISTS {trigger};" for trigger in _FTS_TRIGGERS)
-        if include_trigram:
+        if drop_trigram:
             drop_sql += "DROP TABLE IF EXISTS messages_fts_trigram;"
         drop_sql += "DROP VIEW IF EXISTS messages_fts_trigram_src;DROP TABLE IF EXISTS messages_fts;"
         if legacy:
