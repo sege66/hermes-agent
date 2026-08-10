@@ -31,8 +31,9 @@ SAMPLE_RATE = 16000  # Whisper native rate
 CHANNELS = 1
 DTYPE = "int16"
 SAMPLE_WIDTH = 2  # bytes per sample (int16)
-SILENCE_RMS_THRESHOLD = 200  # RMS below this = silence (int16 range 0-32767)
-SILENCE_DURATION_SECONDS = 3.0  # continuous silence before auto-stop
+# ki66: Yeti idle RMS ~95; env-overridable.
+SILENCE_RMS_THRESHOLD = int(os.getenv("HERMES_VOICE_SILENCE_RMS", "150"))
+SILENCE_DURATION_SECONDS = float(os.getenv("HERMES_VOICE_SILENCE_SECONDS", "6.0"))
 _TEMP_DIR = os.path.join(tempfile.gettempdir(), "hermes_voice")
 
 
