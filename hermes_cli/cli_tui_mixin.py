@@ -854,7 +854,8 @@ class CLITuiMixin:
             except Exception:
                 pass
         with self._voice_lock:
-            self._voice_continuous = True
+            # ki66: default single-shot; HERMES_VOICE_CONTINUOUS=1 restores the loop.
+            self._voice_continuous = os.getenv("HERMES_VOICE_CONTINUOUS", "0") == "1"
 
         # play_beep(sd.wait), AudioRecorder.start(lock) and config I/O must never block the loop.
         def _start_recording():
