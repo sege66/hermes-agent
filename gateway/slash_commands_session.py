@@ -19,7 +19,7 @@ from agent.turn_context import extract_api_content_sidecar
 from gateway.config import Platform
 from gateway.platforms.base import EphemeralReply
 from gateway.platforms.event import MessageEvent, MessageType
-from gateway.session import SessionSource, build_session_key, is_shared_multi_user_session
+from gateway.session import SessionSource, _notify_desktop_session_updated, build_session_key, is_shared_multi_user_session
 from gateway.session_transcript import TranscriptReadError
 from gateway.slash_commands_status import HISTORY_UNREADABLE
 
@@ -203,6 +203,14 @@ class GatewaySessionCommandsMixin:
                 await asyncio.to_thread(self._record_telegram_topic_binding, source, new_entry)
             except Exception:
                 logger.debug("Failed to rebind Telegram topic after /new", exc_info=True)
+        if new_entry is not None:
+            try:
+                _notify_desktop_session_updated(
+                    new_entry.session_id,
+                    previous_session_id=_old_sid,
+                )
+            except Exception:
+                logger.debug("Failed to notify Desktop after /new", exc_info=True)
         _new_sid = new_entry.session_id if new_entry else None
         # Plugin on_session_reset hook (new session guaranteed to exist); best-effort.
         try:

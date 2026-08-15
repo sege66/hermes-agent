@@ -185,6 +185,19 @@ export { WiredPane } from './context'
 // Only the RPCs issued by session creation follow the handoff's profile pin.
 const HANDOFF_CREATE_LEG_METHODS = new Set(['config.set', 'session.close', 'session.create'])
 
+export function externalSessionReplacement(selectedStoredSessionId: string | null | undefined, payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const candidate = payload as { previous_session_id?: unknown; stored_session_id?: unknown }
+  const previousSessionId =
+    typeof candidate.previous_session_id === 'string' ? candidate.previous_session_id.trim() : ''
+  const storedSessionId = typeof candidate.stored_session_id === 'string' ? candidate.stored_session_id.trim() : ''
+
+  return previousSessionId && storedSessionId && selectedStoredSessionId === previousSessionId ? storedSessionId : null
+}
+
 export function ContribWiring({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -890,8 +903,14 @@ export function ContribWiring({ children }: { children: ReactNode }) {
       // the normal event flow carries it. Refetch instead of routing it
       // through the desktop handler, which expects locally-originated frames.
       if (event.type === 'session.external_updated') {
+        const replacementSessionId = externalSessionReplacement(selectedStoredSessionIdRef.current, event.payload)
         void refreshMessagingSessions()
           .then(() => refreshActiveTranscript())
+          .then(() => {
+            if (replacementSessionId) {
+              return resumeSession(replacementSessionId, true)
+            }
+          })
           .catch(() => undefined)
 
         return
@@ -899,7 +918,14 @@ export function ContribWiring({ children }: { children: ReactNode }) {
 
       handleDesktopGatewayEvent(event)
     },
-    [handleDesktopGatewayEvent, refreshActiveTranscript, refreshMessagingSessions, startFreshSessionDraft]
+    [
+      handleDesktopGatewayEvent,
+      refreshActiveTranscript,
+      refreshMessagingSessions,
+      resumeSession,
+      selectedStoredSessionIdRef,
+      startFreshSessionDraft
+    ]
   )
 
   useGatewayBoot({
