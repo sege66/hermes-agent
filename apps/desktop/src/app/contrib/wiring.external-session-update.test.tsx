@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { externalSessionReplacement } from './wiring'
+import { externalSessionReplacement, refreshExternalSessionUpdate } from './wiring'
 
 describe('externalSessionReplacement', () => {
   it('follows the replacement only when the selected stored session matches the previous id', () => {
@@ -25,5 +25,21 @@ describe('externalSessionReplacement', () => {
     expect(externalSessionReplacement('sess-old', { stored_session_id: 'sess-new' })).toBeNull()
     expect(externalSessionReplacement('sess-old', { previous_session_id: 4, stored_session_id: false })).toBeNull()
     expect(externalSessionReplacement('sess-old', null)).toBeNull()
+  })
+
+  it('resumes a reset replacement without refreshing the ended previous transcript', async () => {
+    const refreshActiveTranscript = vi.fn().mockRejectedValue(new Error('previous session ended'))
+    const refreshMessagingSessions = vi.fn().mockResolvedValue(undefined)
+    const resumeSession = vi.fn().mockResolvedValue(undefined)
+
+    await refreshExternalSessionUpdate('sess-new', {
+      refreshActiveTranscript,
+      refreshMessagingSessions,
+      resumeSession
+    }).catch(() => undefined)
+
+    expect(refreshMessagingSessions).toHaveBeenCalledOnce()
+    expect(refreshActiveTranscript).not.toHaveBeenCalled()
+    expect(resumeSession).toHaveBeenCalledWith('sess-new', true)
   })
 })

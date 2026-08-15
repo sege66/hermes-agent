@@ -198,6 +198,27 @@ export function externalSessionReplacement(selectedStoredSessionId: string | nul
   return previousSessionId && storedSessionId && selectedStoredSessionId === previousSessionId ? storedSessionId : null
 }
 
+interface ExternalSessionUpdateActions {
+  refreshActiveTranscript: () => Promise<unknown>
+  refreshMessagingSessions: () => Promise<unknown>
+  resumeSession: (storedSessionId: string, replaceRoute: boolean) => Promise<unknown>
+}
+
+export async function refreshExternalSessionUpdate(
+  replacementSessionId: string | null,
+  actions: ExternalSessionUpdateActions
+): Promise<void> {
+  await actions.refreshMessagingSessions()
+
+  if (replacementSessionId) {
+    await actions.resumeSession(replacementSessionId, true)
+
+    return
+  }
+
+  await actions.refreshActiveTranscript()
+}
+
 export function ContribWiring({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -904,14 +925,11 @@ export function ContribWiring({ children }: { children: ReactNode }) {
       // through the desktop handler, which expects locally-originated frames.
       if (event.type === 'session.external_updated') {
         const replacementSessionId = externalSessionReplacement(selectedStoredSessionIdRef.current, event.payload)
-        void refreshMessagingSessions()
-          .then(() => refreshActiveTranscript())
-          .then(() => {
-            if (replacementSessionId) {
-              return resumeSession(replacementSessionId, true)
-            }
-          })
-          .catch(() => undefined)
+        void refreshExternalSessionUpdate(replacementSessionId, {
+          refreshActiveTranscript,
+          refreshMessagingSessions,
+          resumeSession
+        }).catch(() => undefined)
 
         return
       }
