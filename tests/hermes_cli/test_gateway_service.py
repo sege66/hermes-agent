@@ -1742,6 +1742,7 @@ class TestProfileArg:
             "run",
             "--external-supervisor",
         ]
+        assert "--external-supervisor" not in gateway_cli._gateway_run_command()
 
     def test_launchd_plist_path_uses_real_user_home_not_profile_home(self, tmp_path, monkeypatch):
         profile_dir = tmp_path / ".hermes" / "profiles" / "orcha"
