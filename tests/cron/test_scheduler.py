@@ -2064,7 +2064,8 @@ class TestDeliverResultTimeoutCancelsFuture:
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro), \
-             patch("tools.send_message_tool._send_to_platform", new=standalone_send):
+             patch("tools.send_message_tool._send_to_platform", new=standalone_send), \
+             patch("cron.scheduler.record_cron_delivery") as record_delivery:
             result = _deliver_result(
                 job,
                 "Hello world",
@@ -2079,6 +2080,53 @@ class TestDeliverResultTimeoutCancelsFuture:
         # 3. The standalone fallback must NOT run — that is the #38922 fix:
         #    an in-flight confirmation timeout is assume-delivered, not a resend.
         standalone_send.assert_not_awaited()
+        record_delivery.assert_not_called()
+
+
+class TestCronDeliveryEvidence:
+    def _run_standalone(self, send_result):
+        from gateway.config import Platform
+
+        pconfig = MagicMock()
+        pconfig.enabled = True
+        mock_cfg = MagicMock()
+        mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
+        send = AsyncMock(return_value=send_result)
+        job = {
+            "id": "evidence-job",
+            "name": "Evidence",
+            "deliver": "origin",
+            "origin": {"platform": "telegram", "chat_id": "123"},
+        }
+
+        with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
+             patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
+             patch("tools.send_message_tool._send_to_platform", new=send), \
+             patch("cron.scheduler.record_cron_delivery") as record_delivery:
+            result = _deliver_result(job, "confirmed content")
+        return result, record_delivery
+
+    def test_records_once_after_explicit_success(self):
+        result, record_delivery = self._run_standalone({"success": True})
+
+        assert result is None
+        record_delivery.assert_called_once_with(
+            "evidence-job", "Evidence", "confirmed content"
+        )
+
+    @pytest.mark.parametrize(
+        "send_result",
+        [
+            {"success": False},
+            {"success": True, "error": "rejected"},
+            {},
+        ],
+    )
+    def test_records_nothing_for_unconfirmed_or_failed_results(self, send_result):
+        result, record_delivery = self._run_standalone(send_result)
+
+        assert result is not None
+        record_delivery.assert_not_called()
 
 
 class TestDeliverResultLiveAdapterUnconfirmed:
@@ -2865,10 +2913,6 @@ class TestSetCronSessionTitle:
         out = _set_cron_session_title(db, "sess-1", "Nightly Synthesis")
         assert out == "Nightly Synthesis #2"
         db.get_next_title_in_lineage.assert_called_once_with("Nightly Synthesis")
-
-
-
-
 class TestFailureStreakNudge:
     """Poke-inspired repeated-failure review nudge (_failure_streak_nudge)."""
 

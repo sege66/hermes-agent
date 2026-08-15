@@ -1,5 +1,10 @@
 """Desktop→Telegram mirror: turn-completion hook."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
 import hermes_cli.desktop_telegram_mirror as mirror
 
 
@@ -52,3 +57,45 @@ def test_disabled_when_not_desktop_or_toggled_off(monkeypatch):
     sent2 = _capture(monkeypatch, toggle="0")
     mirror.mirror_turn("hi", "there", "complete")
     assert sent2 == []
+
+
+def test_target_resolution_retries_after_temporary_unavailability(monkeypatch):
+    from cron import scheduler
+    from gateway.config import Platform
+    import gateway.config
+
+    chat_ids = iter([None, "123"])
+    monkeypatch.setattr(scheduler, "_get_home_target_chat_id", lambda _platform: next(chat_ids))
+    monkeypatch.setattr(scheduler, "_get_home_target_thread_id", lambda _platform: None)
+    monkeypatch.setattr(
+        gateway.config,
+        "load_gateway_config",
+        lambda: SimpleNamespace(
+            platforms={Platform.TELEGRAM: SimpleNamespace(enabled=True)}
+        ),
+    )
+    monkeypatch.setattr(mirror, "_target", None)
+
+    assert mirror._resolve_target() is None
+    resolved = mirror._resolve_target()
+    assert resolved is not None
+    assert resolved[0] == Platform.TELEGRAM
+    assert resolved[1].enabled is True
+    assert resolved[2:] == ("123", None)
+
+
+@pytest.mark.parametrize(
+    ("send_result", "expected"),
+    [
+        ({"success": True}, True),
+        ({"success": True, "error": "rejected"}, False),
+        ({"success": False}, False),
+        ({}, False),
+    ],
+)
+def test_send_all_requires_explicit_success(monkeypatch, send_result, expected):
+    monkeypatch.setattr(mirror, "_resolve_target", lambda: ("telegram", object(), "123", None))
+    send = AsyncMock(return_value=send_result)
+    monkeypatch.setattr("tools.send_message_tool._send_to_platform", send)
+
+    assert mirror._send_all(["hello"]) is expected

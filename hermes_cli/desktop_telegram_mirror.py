@@ -30,7 +30,7 @@ _log = logging.getLogger(__name__)
 _MARKER_USER = "🖥 데스크톱 · 나"
 _MARKER_ASSISTANT = "🖥 데스크톱 · 헤르메스"
 
-_target = None  # cached (Platform, pconfig, chat_id, thread_id); () = resolved-but-unavailable
+_target = None  # cached only after a valid (Platform, pconfig, chat_id, thread_id) resolves
 
 
 def _enabled() -> bool:
@@ -41,10 +41,10 @@ def _enabled() -> bool:
 
 
 def _resolve_target():
-    """Resolve the Telegram home target once and cache it."""
+    """Resolve and cache a valid Telegram home target."""
     global _target
     if _target is not None:
-        return _target or None
+        return _target
     try:
         from cron.scheduler import _get_home_target_chat_id, _get_home_target_thread_id
         from gateway.config import Platform, load_gateway_config
@@ -55,12 +55,10 @@ def _resolve_target():
         thread_id = _get_home_target_thread_id("telegram")
     except Exception as exc:
         _log.debug("Desktop→Telegram mirror: target resolve failed: %s", exc)
-        _target = ()
         return None
 
     if not pconfig or not getattr(pconfig, "enabled", False) or not chat_id:
         _log.info("Desktop→Telegram mirror: no enabled Telegram home channel; idle")
-        _target = ()
         return None
 
     _target = (Platform.TELEGRAM, pconfig, chat_id, thread_id)
@@ -68,21 +66,28 @@ def _resolve_target():
     return _target
 
 
-def _send_all(texts) -> None:
+def _send_all(texts) -> bool:
     """Send each text to Telegram, sequentially, in this (background) thread."""
     target = _resolve_target()
     if not target:
-        return
+        return False
     platform, pconfig, chat_id, thread_id = target
+    from cron.scheduler import _confirm_adapter_delivery
     from tools.send_message_tool import _send_to_platform
 
+    delivered = True
     for text in texts:
         try:
-            asyncio.run(
+            result = asyncio.run(
                 _send_to_platform(platform, pconfig, chat_id, text, thread_id=thread_id)
             )
+            if not _confirm_adapter_delivery(result):
+                delivered = False
+                _log.warning("Desktop→Telegram mirror send was not confirmed")
         except Exception as exc:
+            delivered = False
             _log.debug("Desktop→Telegram mirror send failed: %s", exc)
+    return delivered
 
 
 def mirror_turn(user_text, assistant_text, status: str) -> None:

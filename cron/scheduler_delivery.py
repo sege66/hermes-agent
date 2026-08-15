@@ -995,6 +995,10 @@ def _confirm_adapter_delivery(
         return False
     if _result_field(send_result, "delivered") is False:
         return False
+    # ki66: dict results with a truthy in-band error are rejections (object
+    # results skip this — MagicMock would make any attribute truthy).
+    if isinstance(send_result, dict) and send_result.get("error"):
+        return False
     if (
         _result_field(send_result, "message_id") is None
         and not _result_field(send_result, "raw_response")
@@ -1515,24 +1519,27 @@ def _standalone_send(
 
 def _deliver_standalone(
     t: _TargetDelivery, content: str, media_files: list, target_errors: list, delivery_errors: list,
-) -> None:
-    """Standalone fallback for a target the live lane did not deliver."""
+) -> bool:
+    """Standalone fallback for a target the live lane did not deliver. True if confirmed."""
     job = t.job
     if t.is_relay:
         # Relay owns the destination and credential; a native retry could duplicate — fail closed.
         if not target_errors:
             target_errors.append(f"relay delivery to {t.where} failed")
         delivery_errors.extend(target_errors)
-        return
+        return False
     result, err = _standalone_send(t, content, media_files)
-    if err is None and result and result.get("error"):
-        # Not inside an except block — the error comes from the result dict, no traceback.
-        err = f"delivery error: {result['error']} (target {t.where})"
+    if err is None and not _confirm_adapter_delivery(result):
+        if isinstance(result, dict):
+            error = result.get("error") or "unconfirmed send result"
+        else:
+            error = getattr(result, "error", None) or "unconfirmed send result"
+        err = f"delivery error: {error} (target {t.where})"
         logger.error("Job '%s': %s", job["id"], err)
     if err is not None:
         target_errors.append(err)
         delivery_errors.extend(target_errors)
-        return
+        return False
     # Standalone senders report per-file attachment failures in ``warnings`` while returning
     # success; surface them so a vanished attachment doesn't mark the run ok.
     for _w in (result.get("warnings") if isinstance(result, dict) else None) or []:
@@ -1545,6 +1552,7 @@ def _deliver_standalone(
         job, t.platform_name, t.chat_id, t.mirror_text, thread_id=t.thread_id,
         user_id=t.origin_user_id,
         enabled=t.mirror_this_target)
+    return True
 
 
 def _prepare_target_delivery(
@@ -1768,6 +1776,7 @@ def _deliver_result(
         return msg
 
     delivery_errors = []
+    delivery_confirmed = False
     for target in targets:
         # Bot Chat owns admission; never concurrently resume a live owner's transcript.
         if target["platform"] == BOT_CHAT_PLATFORM:
@@ -1793,13 +1802,20 @@ def _deliver_result(
             target_errors=target_errors, delivery_errors=delivery_errors,
             unverified_targets=unverified_targets,
         )
-        if not delivered:
-            _deliver_standalone(
-                t, cleaned_delivery_content, media_files, target_errors, delivery_errors)
+        if delivered:
+            delivery_confirmed = True
+        else:
+            if _deliver_standalone(
+                t, cleaned_delivery_content, media_files, target_errors, delivery_errors,
+            ):
+                delivery_confirmed = True
 
     # Filter-time drops apply to every target; report them once.
     delivery_errors.extend(policy_drop_errors)
     _record_delivery_verification(job, unverified_targets)
+    if delivery_confirmed:
+        from cron.jobs import record_cron_delivery
+        record_cron_delivery(job.get("id", ""), job.get("name", ""), content)
     return "; ".join(delivery_errors) if delivery_errors else None
 
 
