@@ -2263,8 +2263,42 @@ def _update_preflight_handled(args) -> bool:
     return False
 
 
+def _delegate_update_to_external_coordinator() -> bool:
+    """Exec the external coordinator for a real ``hermes update`` command."""
+    if os.environ.get("HERMES_UPDATE_COORDINATOR_ACTIVE") == "1":
+        return False
+    try:
+        update_index = sys.argv.index("update")
+    except ValueError:
+        return False
+
+    hermes_home = Path(
+        os.environ.get("HERMES_HOME") or Path.home() / ".hermes"
+    ).expanduser()
+    coordinator = hermes_home / "bin" / "hermes-update-coordinator"
+    if not coordinator.is_file() or not os.access(coordinator, os.X_OK):
+        return False
+
+    command = [
+        str(coordinator),
+        "update",
+        "--source",
+        "hermes-cli",
+        "--",
+        *sys.argv[update_index + 1 :],
+    ]
+    try:
+        os.execve(str(coordinator), command, os.environ.copy())
+    except OSError as exc:
+        print(f"✗ Failed to start the external Hermes update coordinator: {exc}")
+        raise SystemExit(1) from exc
+    return True
+
+
 def cmd_update(args):
     """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
+    if _delegate_update_to_external_coordinator():
+        return
     if _update_preflight_handled(args):
         return
     gateway_mode = getattr(args, "gateway", False)
