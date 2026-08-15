@@ -891,7 +891,7 @@ export function ContribWiring({ children }: { children: ReactNode }) {
       // through the desktop handler, which expects locally-originated frames.
       if (event.type === 'session.external_updated') {
         void refreshMessagingSessions()
-          .then(() => refreshActiveMessagingTranscript())
+          .then(() => refreshActiveTranscript())
           .catch(() => undefined)
 
         return
@@ -899,7 +899,7 @@ export function ContribWiring({ children }: { children: ReactNode }) {
 
       handleDesktopGatewayEvent(event)
     },
-    [handleDesktopGatewayEvent, refreshActiveMessagingTranscript, refreshMessagingSessions, startFreshSessionDraft]
+    [handleDesktopGatewayEvent, refreshActiveTranscript, refreshMessagingSessions, startFreshSessionDraft]
   )
 
   useGatewayBoot({
