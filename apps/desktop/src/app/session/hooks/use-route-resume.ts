@@ -89,12 +89,10 @@ export function useRouteResume({
   const lastPathnameRef = useRef<string | null>(null)
   const seenGatewayStateRef = useRef(false)
   const wasGatewayOpenRef = useRef(false)
-  // True until the FIRST resume this window dispatches. That resume is the
-  // cold-start restore of a route that was already loaded before the reload —
-  // a re-attachment, not a navigation — so it must not home focus/tabs to the
-  // workspace (which would clobber the persisted active tab; ⌘R always landed
-  // on main). Every later resume is a real navigation and homes as usual.
-  const bootResumeRef = useRef(true)
+  // Only an initial routed/hash session is a cold-start re-attachment. A window
+  // that boots on new chat may navigate later, and its first resume must home
+  // focus/tabs like any other navigation.
+  const bootResumeRef = useRef(Boolean(routedSessionId) || rawHashLooksLikeSession())
   // Per-session retry bookkeeping for the bounded auto-retry effect below. Keyed
   // by the session id we're retrying so switching chats resets the counter.
   const retrySessionIdRef = useRef<string | null>(null)
