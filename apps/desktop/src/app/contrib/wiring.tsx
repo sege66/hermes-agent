@@ -201,7 +201,7 @@ export function externalSessionReplacement(selectedStoredSessionId: string | nul
 interface ExternalSessionUpdateActions {
   refreshActiveTranscript: () => Promise<unknown>
   refreshMessagingSessions: () => Promise<unknown>
-  resumeSession: (storedSessionId: string, replaceRoute: boolean) => Promise<unknown>
+  replaceSessionRoute: (storedSessionId: string) => void
 }
 
 export async function refreshExternalSessionUpdate(
@@ -211,7 +211,7 @@ export async function refreshExternalSessionUpdate(
   await actions.refreshMessagingSessions()
 
   if (replacementSessionId) {
-    await actions.resumeSession(replacementSessionId, true)
+    actions.replaceSessionRoute(replacementSessionId)
 
     return
   }
@@ -928,7 +928,7 @@ export function ContribWiring({ children }: { children: ReactNode }) {
         void refreshExternalSessionUpdate(replacementSessionId, {
           refreshActiveTranscript,
           refreshMessagingSessions,
-          resumeSession
+          replaceSessionRoute: storedSessionId => navigate(sessionRoute(storedSessionId), { replace: true })
         }).catch(() => undefined)
 
         return
@@ -938,9 +938,9 @@ export function ContribWiring({ children }: { children: ReactNode }) {
     },
     [
       handleDesktopGatewayEvent,
+      navigate,
       refreshActiveTranscript,
       refreshMessagingSessions,
-      resumeSession,
       selectedStoredSessionIdRef,
       startFreshSessionDraft
     ]

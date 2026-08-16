@@ -27,19 +27,21 @@ describe('externalSessionReplacement', () => {
     expect(externalSessionReplacement('sess-old', null)).toBeNull()
   })
 
-  it('resumes a reset replacement without refreshing the ended previous transcript', async () => {
+  it('replaces the route for a reset replacement without refreshing the ended previous transcript', async () => {
     const refreshActiveTranscript = vi.fn().mockRejectedValue(new Error('previous session ended'))
     const refreshMessagingSessions = vi.fn().mockResolvedValue(undefined)
-    const resumeSession = vi.fn().mockResolvedValue(undefined)
+    const replaceSessionRoute = vi.fn()
 
-    await refreshExternalSessionUpdate('sess-new', {
+    const actions = {
       refreshActiveTranscript,
       refreshMessagingSessions,
-      resumeSession
-    }).catch(() => undefined)
+      replaceSessionRoute
+    } satisfies Parameters<typeof refreshExternalSessionUpdate>[1]
+
+    await refreshExternalSessionUpdate('sess-new', actions).catch(() => undefined)
 
     expect(refreshMessagingSessions).toHaveBeenCalledOnce()
     expect(refreshActiveTranscript).not.toHaveBeenCalled()
-    expect(resumeSession).toHaveBeenCalledWith('sess-new', true)
+    expect(replaceSessionRoute).toHaveBeenCalledWith('sess-new')
   })
 })
