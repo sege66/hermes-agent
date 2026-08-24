@@ -68,17 +68,37 @@ def _desktop_ready_ports_from_log() -> List[int]:
     return list(reversed(ports[-3:]))
 
 
-def _desktop_session_event_urls() -> List[str]:
+def _desktop_session_event_targets() -> "tuple[List[str], set]":
+    """Ordered candidate URLs plus the subset that are announced live backends.
+
+    ki66: the desktop runs one ``hermes serve`` backend per profile (the primary
+    plus every extra profile, e.g. ``atlas``) and keeps their sockets open
+    concurrently, but the renderer's ``session.external_updated`` refresh
+    handler only listens on the *active* profile's socket. Every port the
+    desktop announced is therefore a live target that must be nudged; the
+    static fallback range is only a guess for when the log yielded nothing.
+    """
     configured = (os.environ.get("HERMES_DESKTOP_SESSION_EVENT_URL") or "").strip()
     if configured:
-        return [configured]
+        return [configured], {configured}
 
-    ports: List[int] = []
-    for port in [*_desktop_ready_ports_from_log(), *_DESKTOP_SESSION_EVENT_PORTS]:
-        if port not in ports:
-            ports.append(port)
+    announced: List[str] = []
+    for port in _desktop_ready_ports_from_log():
+        url = f"http://127.0.0.1:{port}/internal/session-updated"
+        if url not in announced:
+            announced.append(url)
 
-    return [f"http://127.0.0.1:{port}/internal/session-updated" for port in ports]
+    urls = list(announced)
+    for port in _DESKTOP_SESSION_EVENT_PORTS:
+        url = f"http://127.0.0.1:{port}/internal/session-updated"
+        if url not in urls:
+            urls.append(url)
+
+    return urls, set(announced)
+
+
+def _desktop_session_event_urls() -> List[str]:
+    return _desktop_session_event_targets()[0]
 
 
 def _notify_desktop_session_updated(
@@ -99,7 +119,15 @@ def _notify_desktop_session_updated(
     ).encode("utf-8")
 
     def _send() -> None:
-        for url in _desktop_session_event_urls():
+        urls, announced = _desktop_session_event_targets()
+        delivered = False
+        for url in urls:
+            # Announced ports are all live per-profile backends: notify each
+            # of them (a stale one just refuses the connection, cheaply). The
+            # static fallback range is walked only until the first success,
+            # and not at all once an announced backend already took it.
+            if delivered and url not in announced:
+                return
             request = urllib.request.Request(
                 url,
                 data=payload,
@@ -111,7 +139,7 @@ def _notify_desktop_session_updated(
                     request,
                     timeout=_DESKTOP_SESSION_EVENT_TIMEOUT_S,
                 ):
-                    return
+                    delivered = True
             except Exception:
                 continue
 

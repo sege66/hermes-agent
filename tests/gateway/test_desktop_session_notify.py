@@ -109,6 +109,54 @@ class TestNotifyDelivery:
             "previous_session_id": "sess-0",
         }
 
+    def test_notifies_every_announced_backend(self, monkeypatch):
+        # ki66: one backend per desktop profile (primary + e.g. "atlas"), and
+        # the renderer only refreshes from the ACTIVE profile's socket — so a
+        # notify that stops at the first 2xx (the newest-announced backend)
+        # silently starves the primary. Every announced port must be hit.
+        received = []
+        events = []
+
+        def _serve():
+            done = threading.Event()
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_POST(self):
+                    n = int(self.headers.get("Content-Length", 0))
+                    received.append((self.server.server_address[1], json.loads(self.rfile.read(n))))
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b"{}")
+                    done.set()
+
+                def log_message(self, *a):
+                    pass
+
+            srv = HTTPServer(("127.0.0.1", 0), Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            events.append(done)
+            return srv
+
+        primary, atlas = _serve(), _serve()
+        try:
+            monkeypatch.delenv("HERMES_DESKTOP_SESSION_EVENT_URL", raising=False)
+            # Newest first, as _desktop_ready_ports_from_log reports them.
+            monkeypatch.setattr(
+                gs,
+                "_desktop_ready_ports_from_log",
+                lambda: [atlas.server_address[1], primary.server_address[1]],
+            )
+            gs._notify_desktop_session_updated("sess-1", "assistant")
+            assert all(e.wait(3.0) for e in events), "an announced backend was skipped"
+        finally:
+            primary.shutdown()
+            atlas.shutdown()
+
+        assert sorted(port for port, _ in received) == sorted(
+            [primary.server_address[1], atlas.server_address[1]]
+        )
+        assert all(body["session_id"] == "sess-1" for _, body in received)
+
     def test_empty_session_id_is_a_noop(self, monkeypatch):
         called = []
         monkeypatch.setattr(
