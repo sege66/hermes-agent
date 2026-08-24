@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _DESKTOP_SESSION_EVENT_PORTS = (*range(9120, 9131), 9119)
 _DESKTOP_SESSION_EVENT_TIMEOUT_S = 0.12
 _DESKTOP_READY_RE = re.compile(rb"HERMES_(?:DASHBOARD|BACKEND)_READY port=(\d+)")
-_LOCAL_SOURCES = frozenset({"", "cli", "tui"})
+_LOCAL_SOURCES = frozenset({"", "cli", "tui", "local", "desktop"})
 
 
 def _is_external_session_source(source: Any) -> bool:
@@ -148,6 +148,16 @@ def _notify_desktop_session_updated(
         name="hermes-desktop-session-notify",
         daemon=True,
     ).start()
+
+
+def _notify_desktop_rotation(platform_value: Any, new_session_id: str, previous_session_id: str) -> None:
+    """Tell the desktop that an external chat rotated to a fresh session."""
+    try:
+        if not _is_external_session_source(platform_value):
+            return
+        _notify_desktop_session_updated(new_session_id, previous_session_id=previous_session_id)
+    except Exception as exc:
+        logger.debug("Desktop rotation notification failed: %s", exc)
 
 # -- PII redaction helpers --------------------------------------------------------------------
 
@@ -1052,6 +1062,12 @@ class SessionStore(
             end_reason=decision.reset_reason or "session_reset", create_kwargs=create_kwargs,
             origin=source, display_name=decision.entry.display_name,
         )
+        if decision.prev_session_id and create_kwargs:
+            _notify_desktop_rotation(
+                getattr(getattr(source, "platform", None), "value", None),
+                create_kwargs.get("session_id") or decision.entry.session_id,
+                decision.prev_session_id,
+            )
         return decision.entry
 
     def _apply_route_checks(
@@ -1199,7 +1215,13 @@ class SessionStore(
             entry = self._entry_locked(session_key)
             return dict(entry.model_override) if entry and entry.model_override else None
 
-    def reset_session(self, session_key: str, display_name: Optional[str] = None) -> Optional[SessionEntry]:
+    def reset_session(
+        self,
+        session_key: str,
+        display_name: Optional[str] = None,
+        *,
+        notify_desktop: bool = True,
+    ) -> Optional[SessionEntry]:
         """Force reset a session, creating a new session ID."""
         with self._lock:
             old_entry = self._entry_locked(session_key)
@@ -1222,6 +1244,12 @@ class SessionStore(
             create_kwargs=db_create_kwargs, origin=old_entry.origin,
             display_name=new_entry.display_name, during=" during reset",
         )
+        if notify_desktop and new_entry is not None and old_entry.session_id:
+            _notify_desktop_rotation(
+                getattr(old_entry.platform, "value", None),
+                new_entry.session_id,
+                old_entry.session_id,
+            )
         return new_entry
 
     def _replace_route_locked(self, session_key, old_entry, session_id, now, **fields) -> SessionEntry:

@@ -26,7 +26,7 @@ class TestExternalSourceGate:
     def test_external_sources_notify(self, source):
         assert gs._is_external_session_source(source) is True
 
-    @pytest.mark.parametrize("source", ["", "cli", "tui", "CLI", None])
+    @pytest.mark.parametrize("source", ["", "cli", "tui", "CLI", None, "local", "desktop"])
     def test_local_sources_do_not_notify(self, source):
         assert gs._is_external_session_source(source) is False
 
@@ -228,3 +228,78 @@ class TestChokePointWiring:
         store._db = _DB()
         # Must not raise — a broken DB lookup cannot break a transcript write.
         store.append_to_transcript("s1", {"role": "user"}, skip_db=True)
+
+
+class TestRotationNotify:
+    """Session rotations carry the predecessor id so the desktop can follow.
+
+    ki66: the /new slash handler already reported (new, previous); the idle /
+    daily auto-reset in get_or_create_session — the common case — did not, so
+    the desktop stayed pinned to the ended session (2026-08-24 live probe).
+    """
+
+    def _store(self, tmp_path, idle_minutes=1):
+        from datetime import datetime, timedelta
+        from gateway.config import GatewayConfig, Platform, SessionResetPolicy
+        from gateway.session import SessionSource
+
+        config = GatewayConfig()
+        config.default_reset_policy = SessionResetPolicy(mode="idle", idle_minutes=idle_minutes)
+        store = gs.SessionStore(sessions_dir=tmp_path, config=config)
+        source = SessionSource(platform=Platform.TELEGRAM, chat_id="123", user_id="u1")
+        return store, source, datetime, timedelta
+
+    def test_auto_reset_notifies_with_previous_id(self, tmp_path, monkeypatch):
+        store, source, datetime, timedelta = self._store(tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            gs, "_notify_desktop_session_updated",
+            lambda sid, role=None, previous_session_id=None: calls.append((sid, previous_session_id)),
+        )
+        first = store.get_or_create_session(source)
+        assert calls == [], "a fresh session has no predecessor to follow"
+        first.updated_at = datetime.now() - timedelta(minutes=5)
+        store._save()
+
+        rotated = store.get_or_create_session(source, touch_activity=False)
+
+        assert rotated.session_id != first.session_id
+        assert rotated.was_auto_reset is True
+        assert calls == [(rotated.session_id, first.session_id)]
+
+    def test_explicit_reset_notifies_unless_suppressed(self, tmp_path, monkeypatch):
+        store, source, _, _ = self._store(tmp_path, idle_minutes=600)
+        calls = []
+        monkeypatch.setattr(
+            gs, "_notify_desktop_session_updated",
+            lambda sid, role=None, previous_session_id=None: calls.append((sid, previous_session_id)),
+        )
+        first = store.get_or_create_session(source)
+
+        second = store.reset_session(first.session_key)
+        assert second is not None and second.session_id != first.session_id
+        assert calls == [(second.session_id, first.session_id)]
+
+        # The /new handler nudges itself after rebinding a topic lane.
+        third = store.reset_session(first.session_key, notify_desktop=False)
+        assert third is not None and third.session_id != second.session_id
+        assert calls == [(second.session_id, first.session_id)]
+
+    def test_local_platform_rotation_is_silent(self, tmp_path, monkeypatch):
+        from gateway.config import Platform
+        from gateway.session import SessionSource
+
+        store, _, datetime, timedelta = self._store(tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            gs, "_notify_desktop_session_updated",
+            lambda *a, **k: calls.append((a, k)),
+        )
+        local = SessionSource(platform=Platform.LOCAL, chat_id="cli", user_id="me")
+        first = store.get_or_create_session(local)
+        first.updated_at = datetime.now() - timedelta(minutes=5)
+        store._save()
+        store.get_or_create_session(local, touch_activity=False)
+        store.reset_session(first.session_key)
+
+        assert calls == []
