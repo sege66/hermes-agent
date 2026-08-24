@@ -2938,6 +2938,7 @@ def _run_oneshot_from_args(args) -> None:
 
     Bypasses cli.py entirely; _run_and_exit_oneshot never returns.
     """
+    _apply_in_dir(args)
     _confirm_startup_expensive_model_override(args)
     # -z honors --resume/-c/--in exactly like chat (#105892): normalize BEFORE the
     # oneshot exit path takes over, else the flags parse fine but silently do nothing

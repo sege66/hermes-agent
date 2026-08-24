@@ -90,6 +90,41 @@ def test_top_level_in_value_not_mistaken_for_subcommand(monkeypatch):
     assert mod._first_positional_argv() is None
 
 
+def test_fast_oneshot_applies_in_dir_before_launch(main_mod, monkeypatch, tmp_path):
+    import os
+    import sys
+
+    start = os.getcwd()
+    seen_cwd = {}
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["hermes", "--in", str(tmp_path), "-z", "probe"],
+    )
+    monkeypatch.setattr(main_mod, "_prepare_agent_startup", lambda args: None)
+    monkeypatch.setattr(
+        main_mod,
+        "_confirm_startup_expensive_model_override",
+        lambda args: None,
+    )
+
+    def fake_oneshot(*args, **kwargs):
+        seen_cwd["at_launch"] = os.getcwd()
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_run_and_exit_oneshot", fake_oneshot)
+
+    try:
+        with pytest.raises(SystemExit) as exc:
+            main_mod._try_fast_chat_launch()
+    finally:
+        os.chdir(start)
+
+    assert exc.value.code == 0
+    assert seen_cwd["at_launch"] == str(tmp_path.resolve())
+
+
 # ---------------------------------------------------------------------------
 # --resume latest resolution
 # ---------------------------------------------------------------------------
