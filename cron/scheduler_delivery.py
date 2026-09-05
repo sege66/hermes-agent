@@ -1398,7 +1398,7 @@ def _seed_live_delivery_sessions(t: _TargetDelivery, delivered_message_id) -> No
 
 def _deliver_via_live_adapter(
     t: _TargetDelivery, cleaned_text: str, media_files: list, *, target_errors: list,
-    delivery_errors: list, unverified_targets: list,
+    delivery_errors: list, unverified_targets: list, confirmed_targets: Optional[list] = None,
 ) -> bool:
     """Deliver one target via the live gateway adapter; True once delivered. ``target_errors`` =
     this lane's soft failures (surfaced only if standalone also fails); ``delivery_errors`` =
@@ -1452,6 +1452,10 @@ def _deliver_via_live_adapter(
                 route_thread_id if route_thread_id is not None else "-",
                 delivered_message_id if delivered_message_id is not None else "-")
             delivered = True
+            # ki66: an in-flight confirmation timeout is assume-delivered (no resend) but carries
+            # no evidence — only a confirmed text send counts toward the cron delivery log.
+            if confirmed_targets is not None and text_to_send and not timed_out:
+                confirmed_targets.append(t.where)
             _seed_live_delivery_sessions(t, delivered_message_id)
     except Exception as e:
         err_msg = f"live adapter delivery to {t.where} failed: {e}"
@@ -1797,13 +1801,15 @@ def _deliver_result(
         if t is None:
             continue
         target_errors: list = []
+        confirmed_targets: list = []
         delivered = t.live_adapter_ready and _deliver_via_live_adapter(
             t, cleaned_delivery_content, media_files,
             target_errors=target_errors, delivery_errors=delivery_errors,
-            unverified_targets=unverified_targets,
+            unverified_targets=unverified_targets, confirmed_targets=confirmed_targets,
         )
         if delivered:
-            delivery_confirmed = True
+            if confirmed_targets:
+                delivery_confirmed = True
         else:
             if _deliver_standalone(
                 t, cleaned_delivery_content, media_files, target_errors, delivery_errors,

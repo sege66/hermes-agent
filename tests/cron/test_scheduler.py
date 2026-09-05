@@ -2065,7 +2065,7 @@ class TestDeliverResultTimeoutCancelsFuture:
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
              patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro), \
              patch("tools.send_message_tool._send_to_platform", new=standalone_send), \
-             patch("cron.scheduler.record_cron_delivery") as record_delivery:
+             patch("cron.jobs.record_cron_delivery") as record_delivery:
             result = _deliver_result(
                 job,
                 "Hello world",
@@ -2102,7 +2102,7 @@ class TestCronDeliveryEvidence:
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
              patch("tools.send_message_tool._send_to_platform", new=send), \
-             patch("cron.scheduler.record_cron_delivery") as record_delivery:
+             patch("cron.jobs.record_cron_delivery") as record_delivery:
             result = _deliver_result(job, "confirmed content")
         return result, record_delivery
 
