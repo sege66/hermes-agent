@@ -24,7 +24,8 @@ import sqlite3
 
 import pytest
 
-from hermes_state import SessionDB, _FTS_TRIGGERS
+from hermes_state import SessionDB
+from hermes_state_common import _FTS_TRIGGERS
 
 TRIGRAM_TRIGGERS = tuple(t for t in _FTS_TRIGGERS if "trigram" in t)
 
