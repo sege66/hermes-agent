@@ -107,4 +107,3 @@ async def test_reset_notifies_desktop_after_topic_binding_with_old_and_new_ids()
         "sess-new",
         previous_session_id="sess-old",
     )
-
