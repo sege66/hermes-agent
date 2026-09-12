@@ -66,8 +66,23 @@ def _resolve_target():
     return _target
 
 
-def _send_all(texts) -> bool:
-    """Send each text to Telegram, sequentially, in this (background) thread."""
+def _existing_image_files(images) -> list:
+    """Keep only real local files; drop missing paths and non-strings."""
+    out = []
+    for item in images or []:
+        if not isinstance(item, str) or not item:
+            continue
+        if os.path.isfile(item):
+            out.append((item, False))
+    return out
+
+
+def _send_all(texts, media_files=None) -> bool:
+    """Send each text to Telegram, sequentially, in this (background) thread.
+
+    User-turn attachments go on the first send only (caption = that text).
+    Assistant ``@file:`` refs are still extracted by ``_send_to_platform``.
+    """
     target = _resolve_target()
     if not target:
         return False
@@ -75,11 +90,17 @@ def _send_all(texts) -> bool:
     from cron.scheduler import _confirm_adapter_delivery
     from tools.send_message_tool import _send_to_platform
 
+    remaining = list(media_files or [])
     delivered = True
     for text in texts:
+        media = remaining or None
+        remaining = []
         try:
             result = asyncio.run(
-                _send_to_platform(platform, pconfig, chat_id, text, thread_id=thread_id)
+                _send_to_platform(
+                    platform, pconfig, chat_id, text,
+                    thread_id=thread_id, media_files=media,
+                )
             )
             if not _confirm_adapter_delivery(result):
                 delivered = False
@@ -90,23 +111,27 @@ def _send_all(texts) -> bool:
     return delivered
 
 
-def mirror_turn(user_text, assistant_text, status: str) -> None:
+def mirror_turn(user_text, assistant_text, status: str, images=None) -> None:
     """Push a completed desktop chat turn (user prompt + reply) to Telegram.
 
     Fire-and-forget on a daemon thread so the Telegram round-trip never blocks
     the desktop turn loop. No-op unless enabled and the turn completed cleanly.
+    Existing local image paths ride on the user-turn send as media.
     """
     if not _enabled() or status != "complete":
         return
 
+    media = _existing_image_files(images)
     texts = []
     for marker, body in ((_MARKER_USER, user_text), (_MARKER_ASSISTANT, assistant_text)):
         body = body.strip() if isinstance(body, str) else ""
         if body:
             texts.append(f"{marker}\n{body}")
+    if not texts and media:
+        texts = [_MARKER_USER]
     if not texts:
         return
 
     threading.Thread(
-        target=_send_all, args=(texts,), daemon=True, name="desktop-telegram-mirror"
+        target=_send_all, args=(texts, media), daemon=True, name="desktop-telegram-mirror"
     ).start()

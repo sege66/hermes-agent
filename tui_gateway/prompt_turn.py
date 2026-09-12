@@ -847,7 +847,7 @@ def _run_prompt_submit(
             try:
                 from hermes_cli import desktop_telegram_mirror
 
-                desktop_telegram_mirror.mirror_turn(text, raw, status)
+                desktop_telegram_mirror.mirror_turn(text, raw, status, images)
             except Exception:
                 pass
 

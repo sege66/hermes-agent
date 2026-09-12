@@ -17,8 +17,15 @@ def _capture(monkeypatch, *, desktop="1", toggle=None):
         monkeypatch.setenv("HERMES_DESKTOP_TG_MIRROR", toggle)
 
     sent = []
+
+    def _fake(texts, media_files=None):
+        sent.extend(texts)
+        if media_files:
+            sent.append(("media", tuple(media_files)))
+        return True
+
     monkeypatch.setattr(mirror.threading, "Thread", _InlineThread)
-    monkeypatch.setattr(mirror, "_send_all", lambda texts: sent.extend(texts))
+    monkeypatch.setattr(mirror, "_send_all", _fake)
     return sent
 
 
@@ -47,6 +54,26 @@ def test_skips_non_complete_and_empty(monkeypatch):
 
     mirror.mirror_turn("only question", "", "complete")
     assert sent == ["🖥 데스크톱 · 나\nonly question"]
+
+
+def test_mirror_turn_attaches_existing_images_on_user_send(monkeypatch, tmp_path):
+    img = tmp_path / "shot.jpg"
+    img.write_bytes(b"jpeg")
+    missing = tmp_path / "gone.jpg"
+    sent = _capture(monkeypatch)
+    mirror.mirror_turn("사진", "답", "complete", images=[str(img), str(missing), 12])
+    assert sent[0] == "🖥 데스크톱 · 나\n사진"
+    assert sent[1] == "🖥 데스크톱 · 헤르메스\n답"
+    assert sent[2] == ("media", ((str(img), False),))
+
+
+def test_mirror_turn_photo_only_uses_user_marker(monkeypatch, tmp_path):
+    img = tmp_path / "only.png"
+    img.write_bytes(b"png")
+    sent = _capture(monkeypatch)
+    mirror.mirror_turn("  ", "", "complete", images=[str(img)])
+    assert sent[0] == "🖥 데스크톱 · 나"
+    assert sent[1] == ("media", ((str(img), False),))
 
 
 def test_disabled_when_not_desktop_or_toggled_off(monkeypatch):
