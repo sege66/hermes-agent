@@ -266,3 +266,83 @@ class TestRunOneshotForwardsResume:
         assert rc == 0
         assert captured["prompt"] == "hello"
         assert captured["resume"] == "sess-1"
+
+
+def _stub_run_agent_deps(oneshot_mod, monkeypatch, captured):
+    class _FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+        def __setattr__(self, name, _value):
+            pass
+        def run_conversation(self, _prompt, conversation_history=None):
+            return {"final_response": "ok"}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(oneshot_mod, "_create_session_db_for_oneshot", lambda: None)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: {"model": {"default": "ambient-model", "provider": "openrouter"}},
+    )
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        lambda **_kw: {
+            "api_key": "resolved",
+            "base_url": None,
+            "provider": "openrouter",
+            "requested_provider": "openrouter",
+            "api_mode": "chat",
+            "credential_pool": None,
+        },
+    )
+    monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda _cfg, _p: [])
+    monkeypatch.setattr(
+        "hermes_cli.mcp_startup.ensure_mcp_discovery_before_agent_build",
+        lambda **_kw: None,
+    )
+    monkeypatch.setattr("run_agent.AIAgent", _FakeAgent)
+
+
+class TestOneshotHonorsIgnoreRules:
+    """--safe-mode/--ignore-rules used to set env vars that oneshot never applied.
+
+    Live SOUL.md then leaked into hermes-evolve judges (2026-09-13 variance_abort).
+    """
+
+    def test_safe_mode_skips_soul_and_memory(self, monkeypatch):
+        import hermes_cli.oneshot as oneshot_mod
+
+        captured = {}
+        _stub_run_agent_deps(oneshot_mod, monkeypatch, captured)
+        monkeypatch.setenv("HERMES_SAFE_MODE", "1")
+        monkeypatch.delenv("HERMES_IGNORE_RULES", raising=False)
+
+        oneshot_mod._run_agent("hello")
+        assert captured["skip_context_files"] is True
+        assert captured["skip_memory"] is True
+        assert captured["load_soul_identity"] is False
+
+    def test_ignore_rules_env_skips_soul(self, monkeypatch):
+        import hermes_cli.oneshot as oneshot_mod
+
+        captured = {}
+        _stub_run_agent_deps(oneshot_mod, monkeypatch, captured)
+        monkeypatch.delenv("HERMES_SAFE_MODE", raising=False)
+        monkeypatch.setenv("HERMES_IGNORE_RULES", "1")
+
+        oneshot_mod._run_agent("hello")
+        assert captured["skip_context_files"] is True
+        assert captured["skip_memory"] is True
+
+    def test_default_oneshot_still_loads_context(self, monkeypatch):
+        import hermes_cli.oneshot as oneshot_mod
+
+        captured = {}
+        _stub_run_agent_deps(oneshot_mod, monkeypatch, captured)
+        monkeypatch.delenv("HERMES_SAFE_MODE", raising=False)
+        monkeypatch.delenv("HERMES_IGNORE_RULES", raising=False)
+
+        oneshot_mod._run_agent("hello")
+        assert captured["skip_context_files"] is False
+        assert captured["skip_memory"] is False
+        assert captured["load_soul_identity"] is False

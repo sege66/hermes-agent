@@ -468,6 +468,14 @@ def _run_agent(
 
     skills_prompt = _build_preloaded_skills_prompt(skills)
 
+    # --safe-mode / --ignore-rules set these env vars in _prepare_agent_startup, but
+    # oneshot builds AIAgent directly and used to ignore them — live SOUL.md then
+    # contaminates judges (hermes-evolve 2026-09-13 variance_abort 10 vs 4).
+    ignore_rules = (
+        os.environ.get("HERMES_IGNORE_RULES") == "1"
+        or os.environ.get("HERMES_SAFE_MODE") == "1"
+    )
+
     # The try spans agent construction (not just ``chat``) so the store is always closed, even when
     # ``AIAgent(...)`` raises — the one-shot exit path hard-exits via os._exit and skips finalizers.
     agent = None
@@ -488,6 +496,9 @@ def _run_agent(
             fallback_model=get_fallback_chain(cfg) or None,
             ephemeral_system_prompt=skills_prompt,
             reasoning_config=reasoning_config,
+            skip_context_files=ignore_rules,
+            skip_memory=ignore_rules,
+            load_soul_identity=False,
             # The only interactive callback wired: no user sits at a terminal. Sudo prompts gate on
             # HERMES_INTERACTIVE (never set), hook approval via HERMES_ACCEPT_HOOKS=1, dangerous
             # commands via HERMES_YOLO_MODE=1, skill secret capture degrades gracefully.
