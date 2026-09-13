@@ -239,6 +239,13 @@ export interface SessionControlUpdatePayload {
   control?: unknown
 }
 
+/** ki66: `hermes_cli/web_server.py::notify_external_session_updated`. */
+export interface SessionExternalUpdatedPayload {
+  previous_session_id?: null | string
+  role?: unknown
+  stored_session_id?: string
+}
+
 export interface ErrorPayload {
   message?: string
   reason?: string
@@ -446,6 +453,7 @@ export const BACKEND_EVENT_NAMES = [
   'secret.expire',
   'secret.request',
   'session.control.update',
+  'session.external_updated',
   'session.info',
   'session.reclaimed',
   'session.resume_progress',
@@ -543,6 +551,7 @@ export interface BackendGatewayEventMap {
   'secret.expire': RequestExpirePayload
   'secret.request': SecretRequestPayload
   'session.control.update': SessionControlUpdatePayload
+  'session.external_updated': SessionExternalUpdatedPayload
   /** Surface-specific shape (`tui_gateway/server.py::_session_info`); each client narrows. */
   'session.info': Record<string, unknown>
   'session.reclaimed': SessionReclaimedPayload

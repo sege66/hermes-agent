@@ -1003,11 +1003,10 @@ async def notify_external_session_updated(request: Request, body: ExternalSessio
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    from tui_gateway.server import _broadcast_global_event
+    from tui_gateway.server import broadcast_session_external_updated
 
     await asyncio.to_thread(
-        _broadcast_global_event,
-        "session.external_updated",
+        broadcast_session_external_updated,
         {
             "stored_session_id": session_id,
             "role": body.role,

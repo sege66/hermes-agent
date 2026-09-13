@@ -49,6 +49,7 @@
   "secret.expire",
   "secret.request",
   "session.control.update",
+  "session.external_updated",
   "session.info",
   "session.reclaimed",
   "session.resume_progress",

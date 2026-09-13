@@ -632,6 +632,15 @@ def _broadcast_global_event(event: str, payload: dict | None = None) -> None:
             logger.debug("global-event broadcast write failed type=%s", event, exc_info=True)
 
 
+def broadcast_session_external_updated(payload: dict | None = None) -> None:
+    """ki66: an off-box turn landed in state.db; nudge every desktop WS to refetch.
+
+    The gateway process POSTs to the desktop backend, which calls this. The
+    literal event name is kept here so ``test_gateway_event_contract`` sees it.
+    """
+    _broadcast_global_event("session.external_updated", payload)
+
+
 def _approval_request_payload(data: dict | None) -> dict:
     """Build the client-safe representation of a pending approval."""
     payload = dict(data or {})
