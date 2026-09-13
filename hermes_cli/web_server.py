@@ -1003,10 +1003,14 @@ async def notify_external_session_updated(request: Request, body: ExternalSessio
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    from tui_gateway.server import broadcast_session_external_updated
+    from tui_gateway.server import _broadcast_global_event
 
+    # Guard token "session.external_updated" must stay in this file
+    # (`desktop_external_session_broadcast`). The tui_gateway helper of the
+    # same name exists so the shared event contract can see the emit.
     await asyncio.to_thread(
-        broadcast_session_external_updated,
+        _broadcast_global_event,
+        "session.external_updated",
         {
             "stored_session_id": session_id,
             "role": body.role,
