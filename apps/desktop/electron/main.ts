@@ -4041,14 +4041,41 @@ async function handOffMacUpdateToCoordinator() {
   ]
 
   const venvBin = path.join(updateRoot, 'venv', 'bin')
+  const coordinatorEnv = {
+    ...process.env,
+    HERMES_HOME,
+    PATH: pathWithHermesManagedNode(venvBin)
+  }
+
+  // ki66: dry-run merge preflight BEFORE quitting. A 92 here used to leave
+  // the window closed because the coordinator only reopens after hand-off.
+  emitUpdateProgress({
+    stage: 'checking',
+    message: 'Checking whether this update can apply without closing the window…',
+    percent: 8
+  })
+  try {
+    execFileSync(coordinator, ['update', '--dry-run', '--source', 'desktop-preflight'], {
+      cwd: updateRoot,
+      env: coordinatorEnv,
+      timeout: 300_000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 400) : 'preflight failed'
+    const message =
+      'Update cannot apply yet — local patches still conflict with upstream. This window will stay open.'
+    rememberLog(`[updates] coordinator dry-run blocked hand-off: ${detail}`)
+    emitUpdateProgress({ stage: 'error', message, percent: null })
+    startHermes().catch(() => {})
+    return { ok: false, error: message }
+  }
 
   const child = spawn(coordinator, args, {
     cwd: updateRoot,
     env: {
-      ...process.env,
-      HERMES_HOME,
-      HERMES_UPDATE_COORDINATOR_OWNS_DESKTOP: '1',
-      PATH: pathWithHermesManagedNode(venvBin)
+      ...coordinatorEnv,
+      HERMES_UPDATE_COORDINATOR_OWNS_DESKTOP: '1'
     },
     detached: true,
     stdio: 'ignore'

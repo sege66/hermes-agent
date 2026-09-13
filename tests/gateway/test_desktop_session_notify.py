@@ -249,7 +249,12 @@ class TestRotationNotify:
         source = SessionSource(platform=Platform.TELEGRAM, chat_id="123", user_id="u1")
         return store, source, datetime, timedelta
 
-    def test_auto_reset_notifies_with_previous_id(self, tmp_path, monkeypatch):
+    def test_idle_time_does_not_rotate_or_notify(self, tmp_path, monkeypatch):
+        """Upstream routing never rotates on time (``_route_reset_reason``).
+
+        Desktop follow is only for explicit /new — see
+        ``test_explicit_reset_notifies_unless_suppressed``.
+        """
         store, source, datetime, timedelta = self._store(tmp_path)
         calls = []
         monkeypatch.setattr(
@@ -261,11 +266,11 @@ class TestRotationNotify:
         first.updated_at = datetime.now() - timedelta(minutes=5)
         store._save()
 
-        rotated = store.get_or_create_session(source, touch_activity=False)
+        again = store.get_or_create_session(source, touch_activity=False)
 
-        assert rotated.session_id != first.session_id
-        assert rotated.was_auto_reset is True
-        assert calls == [(rotated.session_id, first.session_id)]
+        assert again.session_id == first.session_id
+        assert again.was_auto_reset is not True
+        assert calls == []
 
     def test_explicit_reset_notifies_unless_suppressed(self, tmp_path, monkeypatch):
         store, source, _, _ = self._store(tmp_path, idle_minutes=600)
