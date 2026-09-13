@@ -143,6 +143,7 @@ def test_reload_updated_runtime_modules_restores_new_hermes_constants_symbol(mon
 def _make_update_side_effect(
     current_branch="main",
     commit_count="3",
+    local_commit_count="0",
     ff_only_fails=False,
     reset_fails=False,
     fetch_fails=False,
@@ -203,6 +204,10 @@ def _make_update_side_effect(
         if "checkout" in joined and "main" in joined:
             return SimpleNamespace(stdout="", stderr="", returncode=0)
         if "rev-list" in joined:
+            # origin/<branch>..HEAD = unique local commits; other rev-list
+            # counts (HEAD..origin, fetch summaries) stay `commit_count`.
+            if "..HEAD" in joined:
+                return SimpleNamespace(stdout=f"{local_commit_count}\n", stderr="", returncode=0)
             return SimpleNamespace(stdout=f"{commit_count}\n", stderr="", returncode=0)
         if "merge-base" in joined:
             if merge_base_exists:
@@ -440,6 +445,37 @@ def test_cmd_update_ordinary_divergence_skips_rescue_ref(monkeypatch, tmp_path, 
     out = capsys.readouterr().out
     assert "orphan divergence" not in out
     assert "Fast-forward not possible (history diverged), resetting to match remote" in out
+
+
+def test_reconcile_same_branch_with_local_commits_merges_not_resets(monkeypatch, capsys):
+    """ki66: branch named ``main`` with unique local commits must merge, not reset."""
+    from hermes_cli import update_cmd
+    recorded = []
+
+    def fake_git_run(git_cmd, args, cwd=None, **kwargs):
+        recorded.append(list(args))
+        joined = " ".join(str(a) for a in args)
+        result = SimpleNamespace(stdout="", stderr="", returncode=0)
+        if "show-current" in joined:
+            result.stdout = "main\n"
+        elif "merge-base" in joined:
+            result.stdout = "abc123\n"
+        elif "reset" in joined:
+            raise AssertionError("reset --hard must not run when unique local commits exist")
+        return result
+
+    monkeypatch.setattr(update_cmd, "_git_run", fake_git_run)
+    monkeypatch.setattr(update_cmd, "_count_commits_between", lambda *a, **k: 40)
+    monkeypatch.setattr(
+        update_cmd, "_m", lambda: SimpleNamespace(PROJECT_ROOT=Path("/tmp/hermes-test"))
+    )
+
+    update_cmd._reconcile_diverged_checkout(["git"], "main", "prepull")
+
+    out = capsys.readouterr().out
+    assert "unique commit(s) ahead" in out
+    assert "resetting to match remote" not in out
+    assert any("--no-edit" in args and "merge" in args for args in recorded)
 
 
 def test_cmd_update_orphan_rescue_ref_write_failure_is_non_fatal(monkeypatch, tmp_path, capsys):
