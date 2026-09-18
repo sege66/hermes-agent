@@ -290,7 +290,9 @@ def gmail_search(args):
                     "userId": "me",
                     "id": msg_meta["id"],
                     "format": "metadata",
-                    "metadataHeaders": ["From", "To", "Subject", "Date"],
+                    # ki66 2026-09-19: gws 0.3.4 drops array query params, so
+                    # metadataHeaders=[...] returned ZERO headers (empty from/subject/date).
+                    # Omit it: metadata format returns all headers; _headers_dict filters.
                 },
             )
             headers = _headers_dict(msg)
@@ -430,7 +432,7 @@ def gmail_reply(args):
                 "userId": "me",
                 "id": args.message_id,
                 "format": "metadata",
-                "metadataHeaders": ["From", "Subject", "Message-ID"],
+                # ki66 2026-09-19: see gmail_search — array param dropped by gws 0.3.4.
             },
         )
         headers = _headers_dict(original)
