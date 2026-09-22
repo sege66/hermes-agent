@@ -55,6 +55,18 @@ def test_version_and_image_are_cosmetic_and_offhost_images_are_dropped(tmp_path)
     assert entries["labelled"].to_dict()["version"] == "1.4.0"
 
 
+def test_screenshots_and_readme_are_parsed_and_readme_defaults_on(tmp_path):
+    shot = "https://raw.githubusercontent.com/owner/repo/38fe0fb53eff98d477f807432e965429e665ca33/docs/1.png"
+    (tmp_path / "a.yaml").write_text(yaml.safe_dump(_entry("paged", screenshots=[shot, "https://evil.example/x.png"], readme=True)))
+    (tmp_path / "b.yaml").write_text(yaml.safe_dump(_entry("plain", readme=False)))
+    (tmp_path / "c.yaml").write_text(yaml.safe_dump(_entry("bare")))
+    entries = {e.name: e for e in pc.load_catalog(tmp_path)}
+    assert entries["paged"].screenshots == [shot] and entries["paged"].readme is True
+    assert entries["plain"].screenshots == [] and entries["plain"].readme is False
+    assert entries["bare"].readme is True
+    assert entries["paged"].to_dict()["screenshots"] == [shot] and entries["paged"].to_dict()["readme"] is True
+
+
 def test_invalid_entries_are_skipped_not_raised(tmp_path):
     (tmp_path / "a.yaml").write_text(yaml.safe_dump(_entry("ok")))
     (tmp_path / "b.yaml").write_text(yaml.safe_dump(_entry("short-sha", sha="abc123")))
@@ -70,6 +82,11 @@ def test_find_removed_matches_name_or_normalized_repo(tmp_path):
     assert pc.find_removed("evil", tmp_path).reason == "malware"
     assert pc.find_removed("https://github.com/x/EVIL/", tmp_path) is not None
     assert pc.find_removed("https://github.com/x/fine", tmp_path) is None
+    # Scheme/host/user spellings are not identity: every git way of naming the repo is blocked.
+    for spelling in ("git@github.com:x/evil.git", "ssh://git@github.com/x/evil", "http://github.com/x/evil",
+                     "https://www.github.com/x/evil/", "git://github.com/x/evil.git"):
+        assert pc.find_removed(spelling, tmp_path) is not None, spelling
+    assert pc.find_removed("git@gitlab.com:x/evil.git", tmp_path) is None  # different host stays distinct
 
 
 def test_live_catalog_falls_back_to_in_tree_and_unions_removals(tmp_path, monkeypatch):

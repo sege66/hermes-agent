@@ -573,11 +573,12 @@ class PluginsAction(WireEnum):
     toggle = "toggle"
     install = "install"
     update = "update"
+    remove = "remove"
 
 
 class PluginsManageParams(ProfileParams):
     """``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``
-    (+ ``force``, ``enable``, ``ref``); ``update``: ``name``."""
+    (+ ``force``, ``enable``, ``ref``); ``update``: ``name``; ``remove``: ``name`` (user installs only)."""
 
     action: PluginsAction = PluginsAction.list
     key: str | None = None
@@ -612,15 +613,18 @@ class AgentPluginRow(Result):
 
 
 class PluginsManageResult(Result):
-    """``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``name``/``plugin``;
-    ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s ok payload; ``update`` →
-    ``ok``/``unchanged``/``sha``."""
+    """``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name``
+    (the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s
+    ok payload; ``update`` → ``ok``/``unchanged``/``sha``; ``remove`` → ``ok``/``name`` plus
+    ``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``."""
 
     plugins: list[AgentPluginRow] | None = None
     user_count: int | None = None
     bundled_count: int | None = None
     ok: bool | None = None
     unchanged: bool | None = None
+    restart_required: bool | None = None
+    cleared_memory_provider: bool | None = None
     name: str | None = None
     plugin: AgentPluginRow | None = None
     plugin_name: str | None = None
@@ -632,4 +636,5 @@ class PluginsManageResult(Result):
 
 
 method("plugins.manage", params=PluginsManageParams, result=PluginsManageResult,
-       doc="Plugins Hub backend: list installed plugins, toggle, git-install or re-pin a catalog install.")
+       doc="Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, "
+           "or remove a user install.")

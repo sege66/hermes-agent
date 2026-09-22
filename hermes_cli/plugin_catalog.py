@@ -82,6 +82,8 @@ class PluginCatalogEntry:
     docs_url: str = ""
     version: str = ""            # human label for the pinned sha ("1.4.0"); cosmetic, never parsed
     image: str = ""              # https image URL on a GitHub host; shown on catalog cards
+    screenshots: List[str] = field(default_factory=list)  # GitHub-hosted https URLs; gallery on /docs/plugins/<name>
+    readme: bool = False         # docs site renders the README from the pinned commit on the entry's page
     platforms: List[str] = field(default_factory=list)  # empty = all OSes
     capabilities: CatalogCapabilities = field(default_factory=CatalogCapabilities)
 
@@ -97,6 +99,7 @@ class PluginCatalogEntry:
             "maintainer": self.maintainer, "tier": self.tier, "category": self.category,
             "requires_hermes": self.requires_hermes,
             "subdir": self.subdir, "docs_url": self.docs_url, "version": self.version, "image": self.image,
+            "screenshots": list(self.screenshots), "readme": self.readme,
             "platforms": list(self.platforms),
             "capabilities": {
                 "provides_tools": list(caps.provides_tools), "provides_hooks": list(caps.provides_hooks),
@@ -147,13 +150,16 @@ def entry_from_mapping(data: Any, label: str) -> Optional[PluginCatalogEntry]:
     if image and not is_allowed_image_url(image):
         logger.warning("Plugin catalog: %s: ignoring image %r (must be https on a GitHub host)", label, image)
         image = ""
+    screenshots = [s for s in _str_list(data.get("screenshots")) if is_allowed_image_url(s)]
+    if len(screenshots) != len(_str_list(data.get("screenshots"))):
+        logger.warning("Plugin catalog: %s: ignoring screenshots off GitHub hosts", label)
     return PluginCatalogEntry(
         name=name, repo=repo, sha=sha,
         description=str(data.get("description") or "").strip(),
         maintainer=str(data.get("maintainer") or "").strip(), tier=tier, category=category,
         requires_hermes=str(data.get("requires_hermes") or "").strip(),
         subdir=str(data.get("subdir") or "").strip(), docs_url=str(data.get("docs_url") or "").strip(),
-        version=version, image=image,
+        version=version, image=image, screenshots=screenshots, readme=data.get("readme") is not False,
         platforms=_str_list(data.get("platforms")),
         capabilities=CatalogCapabilities(
             provides_tools=_str_list(caps.get("provides_tools")), provides_hooks=_str_list(caps.get("provides_hooks")),
@@ -224,8 +230,26 @@ def search_catalog(query: str) -> List[PluginCatalogEntry]:
 
 # ── Removed / blocklist ──────────────────────────────────────────────────────
 
+_SCP_URL_RE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):(?!//)(.+)$")  # git@host:owner/repo
+
+
 def _normalize_repo(url: str) -> str:
-    return url.strip().rstrip("/").removesuffix(".git").lower()
+    """Canonical ``host/path`` for a repo URL: scheme, user, ``www.``, ``.git`` and trailing slashes are
+    spelling, not identity — the kill list must match ``git@github.com:Evil/Bad.git`` when it names
+    ``https://github.com/evil/bad``."""
+    from urllib.parse import urlsplit
+    text = url.strip()
+    scp = _SCP_URL_RE.match(text)
+    if scp:
+        host, path = scp.group(1), scp.group(2)
+    elif "://" in text:
+        parts = urlsplit(text)
+        host, path = parts.hostname or "", parts.path
+    else:
+        host, path = "", text
+    host = host.lower().removeprefix("www.")
+    path = path.strip("/").removesuffix(".git").rstrip("/").lower()
+    return f"{host}/{path}" if host else path
 
 
 def find_removed(name_or_repo: str, catalog_dir: Optional[Path] = None) -> Optional[RemovedEntry]:
@@ -247,6 +271,13 @@ def resolved_removed_entries() -> List[RemovedEntry]:
     — e.g. a plugins-hub rebuild annotating every installed plugin — resolve the list once instead
     of paying a live-catalog fetch per candidate."""
     return load_removed_list() + live_removed_list()
+
+
+def cached_removed_entries() -> List[RemovedEntry]:
+    """In-tree list UNION the last fetched live copy, with NO network round-trip — for the load-time and
+    ``enable`` checks that run in every process and must never block on a dead catalog host."""
+    cached = _stale_live_cache(_live_cache_path()) or {}
+    return load_removed_list() + _removed_from_list(cached.get("removed"))
 
 
 def match_removed(
