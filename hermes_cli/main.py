@@ -2406,6 +2406,13 @@ def _delegate_update_to_external_coordinator() -> bool:
     except ValueError:
         return False
 
+    passthrough = sys.argv[update_index + 1 :]
+    if any(flag in passthrough for flag in ("--plan", "--check")):
+        # Read-only inspection flags: upstream cmd_update answers them without
+        # side effects, while the external coordinator only implements real
+        # updates (a delegated --plan ran a live merge — observed 2026-09-22).
+        return False
+
     hermes_home = Path(
         os.environ.get("HERMES_HOME") or Path.home() / ".hermes"
     ).expanduser()
@@ -2419,7 +2426,7 @@ def _delegate_update_to_external_coordinator() -> bool:
         "--source",
         "hermes-cli",
         "--",
-        *sys.argv[update_index + 1 :],
+        *passthrough,
     ]
     try:
         os.execve(str(coordinator), command, os.environ.copy())

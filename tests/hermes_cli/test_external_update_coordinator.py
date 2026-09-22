@@ -63,6 +63,17 @@ def test_internal_worker_marker_prevents_recursion(tmp_path, monkeypatch):
     assert hermes_main._delegate_update_to_external_coordinator() is False
 
 
+def test_readonly_flags_bypass_coordinator(tmp_path, monkeypatch):
+    _install_coordinator(tmp_path)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_UPDATE_COORDINATOR_ACTIVE", raising=False)
+    monkeypatch.setattr(hermes_main.os, "execve", lambda *a: (_ for _ in ()).throw(AssertionError("must not exec")))
+
+    for flag in ("--plan", "--check"):
+        monkeypatch.setattr(hermes_main.sys, "argv", ["hermes", "update", flag])
+        assert hermes_main._delegate_update_to_external_coordinator() is False
+
+
 def test_programmatic_cmd_update_call_keeps_upstream_path(tmp_path, monkeypatch):
     _install_coordinator(tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
