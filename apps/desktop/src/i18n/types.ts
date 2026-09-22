@@ -297,6 +297,7 @@ export interface Translations {
       openaiRejectedApiKey: string
       openaiTtsNeedsKey: string
       codeSkewRestartRequired: string
+      rpcOutOfSync: string
       restartHermesFailed: string
     }
     actions: {
@@ -1618,6 +1619,15 @@ export interface Translations {
       deepLinkCatalogInvalidName: string
       deepLinkCatalogUnknown: (name: string) => string
       deepLinkCatalogUnavailable: string
+      settingsToggle: (name: string) => string
+      settingsForm: {
+        save: string
+        saved: (name: string) => string
+        saveFailed: (name: string) => string
+        optional: string
+        secretSet: string
+        secretStoredAs: (env: string) => string
+      }
     }
     officialCatalog: string
     officialPill: string
