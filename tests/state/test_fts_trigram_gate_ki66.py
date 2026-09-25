@@ -62,7 +62,7 @@ def seeded_db(tmp_path, monkeypatch):
         db.close()
         pytest.skip("trigram tokenizer unavailable in this build")
     db.create_session("s1", source="test")
-    db.append_message("s1", "user", "헤르메스 트라이그램 게이트 회귀 테스트")
+    db.append_message("s1", "assistant", "헤르메스 트라이그램 게이트 회귀 테스트")
     yield db
     try:
         db.close()
