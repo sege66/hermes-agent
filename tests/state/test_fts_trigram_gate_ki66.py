@@ -51,6 +51,9 @@ def _gate(monkeypatch, enabled):
 def seeded_db(tmp_path, monkeypatch):
     """A DB built with the gate OFF, so the trigram index really exists."""
     _gate(monkeypatch, False)
+    # This fixture owns the temporary DB; host-wide process scans exercise a
+    # separate safety boundary and can touch the real Hermes home during tests.
+    monkeypatch.setattr(SessionDB, "_foreign_state_db_holders", lambda self: [])
     db = SessionDB(db_path=tmp_path / "state.db")
     if not db._fts_enabled:
         db.close()
