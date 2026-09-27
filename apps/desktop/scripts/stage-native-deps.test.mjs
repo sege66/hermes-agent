@@ -64,7 +64,7 @@ function makeFakeUnixTerminal(srcRoot) {
 
 // ─── optional native helper tests ───────────────────────────────────
 
-test('a missing Linux HUD toolchain leaves no empty package directories', () => {
+test('cross-target Linux HUD leaves no empty package directories', () => {
   const tmp = fs.mkdtempSync(join(os.tmpdir(), 'hermes-hud-'))
   const warnings = []
   const originalWarn = console.warn
@@ -73,7 +73,7 @@ test('a missing Linux HUD toolchain leaves no empty package directories', () => 
     const distDir = join(tmp, 'dist')
     assert.equal(buildHudModifierMonitor({ source: join(tmp, 'missing-source'), distDir, platform: 'linux', arch: 'x64' }), null)
     assert.equal(existsSync(join(distDir, 'native')), false)
-    assert.match(warnings.join('\n'), /desktop packaging continues/)
+    assert.match(warnings.join('\n'), /needs a native build; modifier tap unavailable/)
   } finally {
     console.warn = originalWarn
     fs.rmSync(tmp, { recursive: true, force: true })
