@@ -545,7 +545,7 @@ def test_branch_tip_failure_names_the_cause(installation):
 
 
 @pytest.mark.parametrize("target_kind,available", [("ancestor", False), ("same", False), ("divergent", True)])
-def test_stable_check_preserves_newer_local_install(installation, monkeypatch, target_kind, available):
+def test_stable_check_preserves_newer_local_install(installation, monkeypatch, capsys, target_kind, available):
     from hermes_cli import source_check
     from hermes_cli.source_releases import SourceTarget
     root, linked, home, base, head, responses, requests, git = installation
@@ -558,6 +558,14 @@ def test_stable_check_preserves_newer_local_install(installation, monkeypatch, t
     assert status["updateAvailable"] is available
     assert status["behind"] == (source_check.UPDATE_AVAILABLE_NO_COUNT if available else 0)
     assert status["currentSha"] == head
+    from types import SimpleNamespace
+    from hermes_cli import update_cmd_check, source_releases
+    monkeypatch.setattr(source_releases, "resolve_source_target",
+                        lambda *args, **kwargs: SourceTarget("stable", "stable", "fixture/fork", commit=target))
+    monkeypatch.setattr(update_cmd_check, "_uc", lambda: SimpleNamespace(_capture_head_sha=lambda *args: head))
+    update_cmd_check.channel_compare_branch("stable", ["git"], root)
+    output = capsys.readouterr().out
+    assert ("Up to date with" in output) is (not available)
 
 
 @pytest.mark.parametrize("prerelease", [False, True])

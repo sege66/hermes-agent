@@ -59,13 +59,30 @@ class SourceTarget:
         return f"{self.channel} v{self.version} ({self.commit[:12]})" if self.commit else self.channel
 
 
+def source_target_is_current(target: SourceTarget, head: str, git_cmd=None, cwd=None) -> bool:
+    """Stable releases already included in a local build need no downgrade."""
+    if head == target.commit:
+        return True
+    if target.requested_channel != "stable" or not target.commit or not head or not git_cmd:
+        return False
+    from hermes_cli.source_check import source_git_env
+
+    try:
+        return subprocess.run(
+            [*git_cmd, "merge-base", "--is-ancestor", target.commit, head], cwd=cwd,
+            env=source_git_env(), capture_output=True, timeout=10,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _resolve_channel(name: str, repository: str):
     """The only adapter to the validated requested/terminal records and manifest.
 
     ChannelReader owns HTTPS, authority and digests. The source adapter below
-    admits its retirement constraints before any checkout operation. No legacy
-    GitHub fallback is allowed when a record is unavailable; the one exception
-    is an unpublished ``main`` record, which resolves to the main branch.
+    admits its retirement constraints before any checkout operation. An unpublished
+    official stable record falls back to published GitHub releases; an unpublished
+    main record resolves to the main branch.
     """
     from hermes_cli.release_channels import ChannelReader
 

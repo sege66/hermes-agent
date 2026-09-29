@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 from hermes_constants import get_hermes_home
-from hermes_cli.source_releases import OFFICIAL_REPOSITORY, _GITHUB_ORIGIN, resolve_source_target
+from hermes_cli.source_releases import OFFICIAL_REPOSITORY, _GITHUB_ORIGIN, resolve_source_target, source_target_is_current
 
 logger = logging.getLogger(__name__)
 UPDATE_AVAILABLE_NO_COUNT = -1
@@ -281,12 +281,8 @@ def _resolve_channel(result: dict, channel: str, co: _Checkout):
     if source_target.commit:
         target = source_target.commit
         result.pop("branch", None)
-        current = co.head == target
-        if not current and channel == "stable" and not co.embedded:
-            current = subprocess.run(
-                [co.git, "merge-base", "--is-ancestor", target, co.head], cwd=co.root,
-                env=source_git_env(), capture_output=True, timeout=10,
-            ).returncode == 0
+        current = source_target_is_current(source_target, co.head,
+                                           [co.git] if not co.embedded else None, co.root)
         result.update(channel=channel, targetSha=target, updateAvailable=not current,
                       behind=0 if current else UPDATE_AVAILABLE_NO_COUNT,
                       sourceVersion=source_target.version, buildId=source_target.build_id)

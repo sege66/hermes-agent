@@ -47,7 +47,7 @@ def channel_compare_branch(selected_channel: str, git_cmd: list[str], root: Path
     ``None`` means the verdict is printed (the channel pins a commit); exits 1 when the channel
     cannot be resolved.
     """
-    from hermes_cli.source_releases import resolve_source_target
+    from hermes_cli.source_releases import resolve_source_target, source_target_is_current
 
     print(f"→ Update channel: {selected_channel}")
     try:
@@ -59,7 +59,7 @@ def channel_compare_branch(selected_channel: str, git_cmd: list[str], root: Path
         return target.branch
     if target.retired:
         print(f"→ {selected_channel} retired; source destination: {target.channel}")
-    if _uc()._capture_head_sha(git_cmd, root) == target.commit:
+    if source_target_is_current(target, _uc()._capture_head_sha(git_cmd, root), git_cmd, root):
         print(f"✓ Up to date with the latest release ({target.label}).")
     else:
         print(f"→ Selected release available: {target.label}")
