@@ -90,6 +90,27 @@ def update_tree(tmp_path, monkeypatch):
                            args=args, resumed=resumed, requests=requests, plans=plans)
 
 
+@pytest.mark.parametrize("case", ["valid", "wrong-head", "not-coordinator"])
+def test_protected_update_completes_only_the_verified_checkout(update_tree, monkeypatch, case):
+    t = update_tree
+    monkeypatch.setenv("HERMES_PROTECTED_UPDATE_HEAD", t.base if case != "wrong-head" else t.wanted)
+    monkeypatch.setenv("HERMES_UPDATE_COORDINATOR_ACTIVE", "0" if case == "not-coordinator" else "1")
+    monkeypatch.setattr("hermes_cli.source_releases.resolve_source_target",
+                        lambda *_a, **_k: pytest.fail("protected update selected another remote target"))
+    if case == "valid":
+        update_cmd._cmd_update_impl(t.args, False)
+        assert len(t.requests) == 1
+        assert t.requests[0]["expected_sha"] == t.base
+        assert t.requests[0]["branch"] == "retained-branch"
+    else:
+        with pytest.raises(SystemExit) as error:
+            update_cmd._cmd_update_impl(t.args, False)
+        assert error.value.code == 1
+        assert t.requests == []
+    assert git(t.clone, "rev-parse", "HEAD") == t.base
+    assert git(t.clone, "rev-parse", "origin/main") == t.base
+
+
 @pytest.mark.parametrize('case', ['main', 'explicit', 'missing', 'no-move', 'wrong-branch',
                                 'fork-no-upstream', 'fork-upstream', 'fork-upstream-push-ok',
                                 'fork-upstream-wrong-branch', 'fork-upstream-reverted',
@@ -441,4 +462,3 @@ def test_update_syntax_failure_restores_pre_update_head(update_tree, monkeypatch
         assert local.read_bytes() == unstaged
         assert git(t.clone, 'show', ':.gitignore') == staged.decode().strip()
         assert (t.clone / 'notes.txt').read_bytes() == b'untracked local work\n'
-

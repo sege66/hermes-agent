@@ -1473,6 +1473,20 @@ def _cmd_update_impl(args, gateway_mode: bool):
     completion_request = _source_completion_request(
         opts, _pre_update_plan, pre_update_snapshot_id, _windows_gateway_resume,
         had_desktop_app_before_update, gateway_mode)
+    protected_head = os.environ.get("HERMES_PROTECTED_UPDATE_HEAD")
+    if protected_head:
+        # The coordinator already merged and verified this tree. A second
+        # remote selection could install code that never passed its preflight.
+        if (os.environ.get("HERMES_UPDATE_COORDINATOR_ACTIVE") != "1"
+                or use_zip_update
+                or _capture_head_sha(git_cmd, _m().PROJECT_ROOT) != protected_head):
+            print("✗ Protected update target does not match this checkout. No completion was applied.")
+            _m()._resume_windows_gateways_after_update(_windows_gateway_resume)
+            sys.exit(1)
+        completion_request["expected_sha"] = protected_head
+        completion_request["branch"] = _git_run(git_cmd, ["branch", "--show-current"]).stdout.strip()
+        _complete_source_update(completion_request)
+        return
     branch = _m()._resolve_update_branch(args)
     completion_request["branch"] = branch
     target_ref = f"origin/{branch}"
