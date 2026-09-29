@@ -81,6 +81,8 @@ def resolve_source_target(channel: str, git_cmd=None, cwd=None, *, repository=No
     try:
         resolved = _resolve_channel(channel, repository)
     except ChannelNotFound:
+        if channel == "stable" and repository.lower() == OFFICIAL_REPOSITORY.lower():
+            return _official_published_stable_target()
         if channel != "main":
             raise
         # main IS the source branch; its record can only add a retirement.
@@ -108,6 +110,29 @@ def resolve_source_target(channel: str, git_cmd=None, cwd=None, *, repository=No
         _refuse_retirement_downgrade(request, terminal, git_cmd, cwd)
     return SourceTarget(channel, destination, repository, commit=commit,
                         version=request["sourceVersion"], build_id=request["buildId"])
+
+
+def _official_published_stable_target() -> SourceTarget:
+    """Ki66: official published releases bridge the not-yet-published stable feed."""
+    from urllib.parse import quote
+
+    base = f"https://api.github.com/repos/{OFFICIAL_REPOSITORY}"
+    release = _json(f"{base}/releases/latest")
+    if (not isinstance(release, dict) or release.get("draft") is not False
+            or release.get("prerelease") is not False or not release.get("published_at")
+            or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", release.get("tag_name", ""))):
+        raise ValueError("No official published stable release")
+    ref = _json(f"{base}/git/ref/tags/{quote(release['tag_name'], safe='')}")["object"]
+    for _ in range(5):
+        if ref["type"] == "commit":
+            break
+        if ref["type"] != "tag" or not _SHA.fullmatch(ref["sha"]):
+            raise ValueError("Release tag does not identify a commit")
+        ref = _json(f"{base}/git/tags/{ref['sha']}")["object"]
+    if ref["type"] != "commit" or not _SHA.fullmatch(ref["sha"]):
+        raise ValueError("Release tag does not identify a commit")
+    return SourceTarget("stable", "stable", OFFICIAL_REPOSITORY,
+                        commit=ref["sha"], version=release["tag_name"][1:])
 
 
 def _refuse_retirement_downgrade(request: dict, terminal: dict, git_cmd, cwd) -> None:

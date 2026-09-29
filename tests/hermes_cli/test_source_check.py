@@ -542,3 +542,39 @@ def test_branch_tip_failure_names_the_cause(installation):
     status = check_for_updates(install_root=root, home=home, force=True)
     assert status["error"] == "fetch-failed"
     assert "HTTP 503" in status["message"]
+
+
+@pytest.mark.parametrize("target_kind,available", [("ancestor", False), ("same", False), ("divergent", True)])
+def test_stable_check_preserves_newer_local_install(installation, monkeypatch, target_kind, available):
+    from hermes_cli import source_check
+    from hermes_cli.source_releases import SourceTarget
+    root, linked, home, base, head, responses, requests, git = installation
+    target = base if target_kind == "ancestor" else head
+    if target_kind == "divergent":
+        target = git("commit-tree", git("rev-parse", "HEAD^{tree}"), "-p", base, "-m", "release")
+    monkeypatch.setattr(source_check, "resolve_source_target",
+                        lambda *args, **kwargs: SourceTarget("stable", "stable", "fixture/fork", commit=target))
+    status = source_check.check_for_updates(install_root=root, home=home, channel="stable", force=True)
+    assert status["updateAvailable"] is available
+    assert status["behind"] == (source_check.UPDATE_AVAILABLE_NO_COUNT if available else 0)
+    assert status["currentSha"] == head
+
+
+@pytest.mark.parametrize("prerelease", [False, True])
+def test_official_published_stable_fallback(monkeypatch, prerelease):
+    from hermes_cli import source_releases
+    from hermes_cli.release_channels import ChannelNotFound
+    def missing(*args):
+        raise ChannelNotFound("stable feed not published")
+    monkeypatch.setattr(source_releases, "_resolve_channel", missing)
+    commit = "a" * 40
+    def response(url):
+        if url.endswith("/latest"):
+            return dict(draft=False, prerelease=prerelease, published_at="2026-09-24", tag_name="v2026.9.24")
+        return {"object": {"type": "commit", "sha": commit}}
+    monkeypatch.setattr(source_releases, "_json", response)
+    if prerelease:
+        with pytest.raises(ValueError, match="published stable"):
+            source_releases.resolve_source_target("stable")
+    else:
+        assert source_releases.resolve_source_target("stable").commit == commit

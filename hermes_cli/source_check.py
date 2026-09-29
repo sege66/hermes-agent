@@ -281,8 +281,14 @@ def _resolve_channel(result: dict, channel: str, co: _Checkout):
     if source_target.commit:
         target = source_target.commit
         result.pop("branch", None)
-        result.update(channel=channel, targetSha=target, updateAvailable=co.head != target,
-                      behind=0 if co.head == target else UPDATE_AVAILABLE_NO_COUNT,
+        current = co.head == target
+        if not current and channel == "stable" and not co.embedded:
+            current = subprocess.run(
+                [co.git, "merge-base", "--is-ancestor", target, co.head], cwd=co.root,
+                env=source_git_env(), capture_output=True, timeout=10,
+            ).returncode == 0
+        result.update(channel=channel, targetSha=target, updateAvailable=not current,
+                      behind=0 if current else UPDATE_AVAILABLE_NO_COUNT,
                       sourceVersion=source_target.version, buildId=source_target.build_id)
         if source_target.retired:
             result["retirement"] = {"destination": source_target.channel, "sourceOnly": True}
