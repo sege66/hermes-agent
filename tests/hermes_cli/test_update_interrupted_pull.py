@@ -235,6 +235,9 @@ def test_concurrent_launches_take_turns_and_all_rerun_from_the_restored_tree(tmp
     _git(origin, "init", "-q", "-b", "main")
     _git(origin, "config", "user.email", "t@example.invalid")
     _git(origin, "config", "user.name", "t")
+    # Background GC can remove loose objects while the local clone copies them.
+    _git(origin, "config", "gc.auto", "0")
+    _git(origin, "config", "maintenance.auto", "false")
     names = [f"m{i}.py" for i in range(300)]  # enough work that the launches overlap
     for i, name in enumerate(names):
         (origin / name).write_text(f"V = 'old {i}'\n" * 50, encoding="utf-8", newline="")

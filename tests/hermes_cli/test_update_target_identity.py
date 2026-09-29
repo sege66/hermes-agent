@@ -25,6 +25,8 @@ def git(root, *args):
 
 @pytest.fixture
 def update_tree(tmp_path, monkeypatch):
+    # The borrowed interpreter owns the live install; this fixture owns the temporary checkout.
+    monkeypatch.setattr('hermes_cli.update_owning_install.owning_install_root', lambda *_: None)
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', str(tmp_path / 'git-config'))
     monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
     monkeypatch.setenv('GIT_ALLOW_PROTOCOL', 'file')

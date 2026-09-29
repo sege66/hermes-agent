@@ -238,13 +238,12 @@ class TestRotationNotify:
     the desktop stayed pinned to the ended session (2026-08-24 live probe).
     """
 
-    def _store(self, tmp_path, idle_minutes=1):
+    def _store(self, tmp_path):
         from datetime import datetime, timedelta
-        from gateway.config import GatewayConfig, Platform, SessionResetPolicy
+        from gateway.config import GatewayConfig, Platform
         from gateway.session import SessionSource
 
         config = GatewayConfig()
-        config.default_reset_policy = SessionResetPolicy(mode="idle", idle_minutes=idle_minutes)
         store = gs.SessionStore(sessions_dir=tmp_path, config=config)
         source = SessionSource(platform=Platform.TELEGRAM, chat_id="123", user_id="u1")
         return store, source, datetime, timedelta
@@ -273,7 +272,7 @@ class TestRotationNotify:
         assert calls == []
 
     def test_explicit_reset_notifies_unless_suppressed(self, tmp_path, monkeypatch):
-        store, source, _, _ = self._store(tmp_path, idle_minutes=600)
+        store, source, _, _ = self._store(tmp_path)
         calls = []
         monkeypatch.setattr(
             gs, "_notify_desktop_session_updated",
