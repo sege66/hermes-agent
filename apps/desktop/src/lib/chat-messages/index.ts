@@ -13,6 +13,7 @@ export {
   normalizeWs,
   prependMarkerLine,
   reasoningPart,
+  reasoningTextFromDetails,
   renderMediaTags,
   textPart
 } from './parts'
