@@ -3516,7 +3516,7 @@ def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
             lines = [json.dumps(e, ensure_ascii=False) for e in reversed(existing)]
             lines.append(json.dumps(entry, ensure_ascii=False))
             store = _current_cron_store()
-            fd, tmp_path = tempfile.mkstemp(dir=str(store.cron_dir), suffix=".tmp", prefix=".deliveries_")
+            fd, tmp_path = mkstemp_beside(store.deliveries_file, suffix=".tmp", prefix=".deliveries_")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write("\n".join(lines) + "\n")
