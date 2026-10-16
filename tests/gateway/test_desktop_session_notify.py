@@ -290,14 +290,28 @@ class TestRotationNotify:
         assert calls == [(second.session_id, first.session_id)]
 
     def test_local_platform_rotation_is_silent(self, tmp_path, monkeypatch):
+        """LOCAL resets route to the authority-fenced recovery path (no desktop notify).
+
+        Upstream 8b8559bf58 moved LOCAL resets into
+        ``gateway.session_local_recovery.reset_local_session``, which carries no desktop
+        mirror call and needs a served authority's epoch — a bare SessionStore can no
+        longer perform the reset itself. Pin the routing (and the silence it implies)
+        so a regression to the notifying ``_replace_route`` path is caught.
+        """
+        from gateway import session_local_recovery
         from gateway.config import Platform
         from gateway.session import SessionSource
 
         store, _, datetime, timedelta = self._store(tmp_path)
         calls = []
+        routed = []
         monkeypatch.setattr(
             gs, "_notify_desktop_session_updated",
             lambda *a, **k: calls.append((a, k)),
+        )
+        monkeypatch.setattr(
+            session_local_recovery, "reset_local_session",
+            lambda store_, old, sid, now, dn: routed.append(old.session_key),
         )
         local = SessionSource(platform=Platform.LOCAL, chat_id="cli", user_id="me")
         first = store.get_or_create_session(local)
@@ -306,4 +320,5 @@ class TestRotationNotify:
         store.get_or_create_session(local, touch_activity=False)
         store.reset_session(first.session_key)
 
+        assert routed == [first.session_key]
         assert calls == []
