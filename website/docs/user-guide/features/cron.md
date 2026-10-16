@@ -146,6 +146,20 @@ hermes config set cron.model <model>                              # every unpinn
 
 `hermes cron list` and the `cronjob_manage` tool report `pinned` per job.
 
+To make every **active LLM** cron job carry an explicit `provider` and `model` — so a new
+unpinned job is rejected at creation or edit time instead of silently following the main
+agent model (which `hermes model` can later move) — fail the fleet closed:
+
+```yaml
+cron:
+  require_explicit_provider_model: true
+```
+
+The check runs when the job is persisted, before any schedule fires; a missing field raises
+`Active LLM cron jobs require explicit provider and model when
+cron.require_explicit_provider_model=true`. Jobs run with `--no-agent` are exempt (they never
+call a model).
+
 ## Skill-backed cron jobs
 
 A cron job can load one or more skills before it runs the prompt. Each skill loads exactly as it does from `/skill-name` in a chat session, including the `[Skill config ...]` block with its resolved `metadata.hermes.config` values from `config.yaml`.
