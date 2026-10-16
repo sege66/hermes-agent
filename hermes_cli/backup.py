@@ -88,6 +88,7 @@ _EXCLUDED_DIRS = {
     ".venv", "venv", "site-packages",
     # Tool / build caches — all regeneratable.
     ".cache", ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    ".gitnexus",        # generated code graph indexes — re-analyze instead
 }
 
 # Hermes-managed runtime downloads are regenerable. Match only profile roots:
@@ -1119,7 +1120,10 @@ _QUICK_STATE_FILES = (
     "feishu_comment_pairing.json",      # Feishu comment subscription pairings
 )
 
-_QUICK_DEFAULT_KEEP = 20
+# Quick snapshots include state.db, which can grow into multi-GB FTS indexes on
+# gateway-heavy installs. Keep a short rollback window by default so pre-update
+# snapshots do not silently dominate HERMES_HOME disk usage.
+_QUICK_DEFAULT_KEEP = 3
 
 
 def _quick_snapshot_root(hermes_home: Optional[Path] = None) -> Path:
