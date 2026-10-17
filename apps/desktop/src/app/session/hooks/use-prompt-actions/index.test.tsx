@@ -5616,6 +5616,39 @@ describe('usePromptActions live-owner refusal (#106217)', () => {
     // Not a stale-runtime symptom: no resume/re-mint attempt hides the refusal.
     expect(requestGateway.mock.calls.map(c => c[0])).toEqual(['prompt.submit'])
   })
+  it('stamps a session_superseded refusal as a read-only chat card without a raw-code toast', async () => {
+    // /new or an idle reset moved this messaging chat on: the old row is read-only.
+    let latest: Record<string, unknown> | undefined
+    $notifications.set([])
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'prompt.submit') {
+        throw new JsonRpcGatewayError('session_superseded', { code: 4009, data: { reason: 'session_superseded' } })
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    await actRender(
+      <Harness
+        onReady={h => (handle = h)}
+        onSeedState={next => {
+          latest = next
+        }}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+      />
+    )
+
+    expect(await handle!.submitText('still here?')).toBe(false)
+
+    const bubble = (latest?.messages as { errorSurface?: Record<string, unknown> }[]).at(-1)
+
+    expect(bubble?.errorSurface).toEqual({ layer: 'gateway', code: 'SESSION_SUPERSEDED', retryable: false })
+    expect($notifications.get()).toEqual([])
+    expect(requestGateway.mock.calls.map(c => c[0])).toEqual(['prompt.submit'])
+  })
 })
 
 describe('usePromptActions send from a window behind the stored transcript', () => {

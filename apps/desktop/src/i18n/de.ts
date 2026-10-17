@@ -5130,6 +5130,10 @@ export const deOverrides = {
           title: 'Dieser Chat ist woanders offen',
           body: 'Dieser Chat ist gerade in einem anderen Hermes-Fenster oder Terminal geöffnet. Schließen Sie ihn dort und senden Sie Ihre Nachricht erneut, oder starten Sie hier einen neuen Chat.'
         },
+        SESSION_SUPERSEDED: {
+          title: 'Dieser Chat wurde fortgesetzt',
+          body: 'Dieser Chat wurde zurückgesetzt (per /new oder nach einer Pause), daher ist diese ältere Unterhaltung schreibgeschützt. Öffnen Sie den neuesten Chat in der Seitenleiste oder starten Sie hier einen neuen Chat.'
+        },
         disk_full: {
           title: 'Festplatte voll',
           body: 'Ihre Festplatte ist voll, daher konnte Hermes dieses Gespräch nicht speichern. Geben Sie Speicherplatz frei und versuchen Sie es erneut.'

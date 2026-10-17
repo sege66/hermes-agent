@@ -4698,6 +4698,10 @@ export const en: Translations = {
           title: 'This chat is open somewhere else',
           body: 'This chat is currently open in another Hermes window or terminal. Close it there and send your message again, or start a new chat here.'
         },
+        SESSION_SUPERSEDED: {
+          title: 'This chat has moved on',
+          body: 'This chat was reset (by /new or after a quiet spell), so this older conversation is read-only. Open the newest chat in the sidebar to keep going, or start a new chat here.'
+        },
         disk_full: {
           title: 'Disk full',
           body: 'Your disk is full, so Hermes could not save this conversation. Free some space, then retry.'

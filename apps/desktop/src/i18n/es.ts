@@ -5124,6 +5124,10 @@ export const esOverrides = {
           title: 'Este chat está abierto en otro sitio',
           body: 'Este chat está abierto en otra ventana de Hermes o en un terminal. Ciérralo allí y vuelve a enviar el mensaje, o empieza un chat nuevo aquí.'
         },
+        SESSION_SUPERSEDED: {
+          title: 'Este chat ha continuado en otro',
+          body: 'Este chat se reinició (con /new o tras un rato de inactividad), así que esta conversación anterior es de solo lectura. Abre el chat más reciente en la barra lateral o empieza un chat nuevo aquí.'
+        },
         disk_full: {
           title: 'Disco lleno',
           body: 'Tu disco está lleno, así que Hermes no pudo guardar esta conversación. Libera espacio y reinténtalo.'

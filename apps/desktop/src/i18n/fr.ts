@@ -5138,6 +5138,10 @@ export const frOverrides = {
           title: 'Cette conversation est ouverte ailleurs',
           body: 'Cette conversation est déjà ouverte dans une autre fenêtre Hermes ou un terminal. Fermez-la là-bas puis réessayez, ou démarrez-en une nouvelle ici.'
         },
+        SESSION_SUPERSEDED: {
+          title: 'Cette conversation a été remplacée',
+          body: 'Cette conversation a été réinitialisée (par /new ou après une période d’inactivité) ; cette ancienne conversation est donc en lecture seule. Ouvrez la plus récente dans la barre latérale ou démarrez-en une nouvelle ici.'
+        },
         disk_full: {
           title: 'Disque plein',
           body: "Votre disque est plein ; Hermes n'a pas pu enregistrer cette conversation. Libérez de l'espace puis réessayez."

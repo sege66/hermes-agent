@@ -64,6 +64,7 @@ import {
   isProviderSetupError,
   isSessionBusyError,
   isSessionNotOwnedError,
+  isSessionSupersededError,
   isTargetSessionBusy,
   releaseSubmitInFlight,
   SessionRecoveryAborted,
@@ -1320,6 +1321,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         // Another surface owns the session (#106217): a deterministic gateway
         // refusal, so the error card drops Retry and offers a new session.
         const notOwned = isSessionNotOwnedError(err)
+        const superseded = isSessionSupersededError(err)
 
         updateSessionState(
           sessionId,
@@ -1333,6 +1335,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
                 parts: [],
                 error: message || copy.promptFailed,
                 ...(notOwned && { errorSurface: { layer: 'gateway', code: 'SESSION_NOT_OWNED', retryable: false } }),
+                ...(superseded && { errorSurface: { layer: 'gateway', code: 'SESSION_SUPERSEDED', retryable: false } }),
                 branchGroupId: state.pendingBranchGroup ?? undefined,
                 completedAt: occurredAt,
                 timestamp: occurredAt
@@ -1354,7 +1357,8 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
           return false
         }
 
-        if (targetIsCurrentView()) {
+        // The superseded card already says what happened and where to go; a toast would repeat the raw code.
+        if (targetIsCurrentView() && !superseded) {
           notifyError(err, copy.promptFailed)
         }
 
