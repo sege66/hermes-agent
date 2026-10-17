@@ -342,8 +342,9 @@ def retire_live_sessions(authority, session_ids, *, require_fence=False):
     for sid in session_ids:
         # A closed session's refusal of new delegations (session_viewer_close) goes with its live state.
         allow_for_session((authority.profile_id, sid))
+        moved = sid in authority.sessions and authority.route_moved_past(sid)
         candidate = authority.sessions.pop(sid, None)
-        if candidate is not None and not candidate.superseded:  # its route is the newer session's
+        if candidate is not None and not moved:  # its route is the newer session's
             evict = getattr(authority.runner, '_evict_cached_agent', None)
             if callable(evict):
                 evict(candidate.route)

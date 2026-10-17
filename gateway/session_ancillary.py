@@ -202,6 +202,14 @@ async def read(connection, ref, params, *, kind):
     authorize(connection, ref, params, 'session:read')
     live = authority.sessions[ref.session_id]
     with live.event_stream.lock:
+        if authority.route_moved_past(ref.session_id):
+            # Read-only: its controls are its own rows; the route's live objects are the newer session's.
+            if kind == 'control':
+                return {'control': control_snapshot(authority, ref)}
+            if kind == 'subagents':
+                return {'subagents': [], 'delegations': []}
+            if kind == 'processes':
+                return {'processes': []}
         _require_current_route(authority, ref)
         if kind == 'control':
             return {'control': control_snapshot(authority, ref)}

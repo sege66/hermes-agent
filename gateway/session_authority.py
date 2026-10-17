@@ -152,7 +152,7 @@ class SessionAuthority:
                     from gateway.session_api import restore_api_session
                     restore_api_session(self, ref.session_id)
         from gateway.config import Platform
-        if self.sessions[ref.session_id].superseded and capability != 'session:read':
+        if self.route_moved_past(ref.session_id) and capability != 'session:read':
             # One gateway owns every session and never crosses them: the lane's route now belongs to
             # its newer conversation, so a write here would land there. Named, so a viewer can say so.
             raise RuntimeStoreError('session_superseded', field='session_id',
@@ -222,9 +222,26 @@ class SessionAuthority:
         live.superseded = live.history_mount = False
         return SessionRef(self.profile_id, sid)
 
+    def route_moved_past(self, session_id):
+        """*session_id*'s lane now routes a newer conversation, so the session is read-only.
+
+        A cold history mount learns this when it mounts or when its successor publishes
+        (``_publish_route``). A hot lane session learns it here: ``/new`` or a policy reset rotates
+        the routing entry without touching the authority, and the successor publishes only on the
+        lane's next inbound, so until then a write to the old id would run on the shared route,
+        i.e. in the newer conversation. Latched until the lane names this session again."""
+        live = self.sessions[session_id]
+        if not live.superseded and live.source is not None:
+            from gateway.session_route_recovery import _messaging_platform, _names_another_conversation
+            platform = getattr(live.source, 'platform', None)
+            if (platform is not None and _messaging_platform(platform.value) is not None
+                    and _names_another_conversation(self, session_id, live.route)):
+                live.superseded = True
+        return live.superseded
+
     def agent(self, ref):
         live = self.sessions[ref.session_id]
-        if live.superseded:
+        if self.route_moved_past(ref.session_id):
             return None  # the route's agent is the newer conversation's
         lookup = getattr(self.runner, '_resident_agent_for', None) or self.runner._cached_agent_for
         return lookup(live.route)
@@ -758,7 +775,7 @@ class SessionAuthority:
         Stop above reached the turn's own agent, not a cached one it may still replace."""
         from gateway.run import _AGENT_PENDING_SENTINEL
         live = self.sessions[ref.session_id]
-        if live.superseded:
+        if self.route_moved_past(ref.session_id):
             return False
         running = getattr(self.runner, '_running_agents', None) or {}
         agent = running.get(live.route)
