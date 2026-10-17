@@ -151,6 +151,37 @@ describe('session-control store', () => {
     expect(request).toHaveBeenCalledTimes(1)
   })
 
+  it.each([
+    ['typed refusal', () => new JsonRpcGatewayError('stale_generation', { code: 4009, data: { reason: 'stale_generation' } })],
+    ['bare message', () => new Error('stale_generation')]
+  ])('keeps the last snapshot without an error when a read meets a retired route (%s)', async (_name, make) => {
+    applySessionControlSnapshot('s1', FULL_SNAPSHOT)
+    useGateway(
+      vi.fn(async () => {
+        throw make()
+      })
+    )
+
+    await refreshSessionControl('s1')
+
+    const entry = $sessionControlBySession.get().s1!
+    expect(entry.snapshot!.revision).toBe(FULL_SNAPSHOT.revision)
+    expect(entry.error).toBeNull()
+    expect(entry.loading).toBe(false)
+  })
+
+  it('still reports stale_generation from an explicit control action', async () => {
+    applySessionControlSnapshot('s1', FULL_SNAPSHOT)
+    useGateway(
+      vi.fn(async () => {
+        throw new Error('stale_generation')
+      })
+    )
+
+    await expect(runSessionControlAction('s1', 'goal.pause')).rejects.toThrow('stale_generation')
+    expect($sessionControlBySession.get().s1!.error).toBe('stale_generation')
+  })
+
   it('retains the last good snapshot and reports a bounded ordinary read error', async () => {
     applySessionControlSnapshot('s1', FULL_SNAPSHOT)
     const message = 'x'.repeat(500)

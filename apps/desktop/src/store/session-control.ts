@@ -732,6 +732,31 @@ function isMethodNotFound(error: unknown): boolean {
   return message.toLowerCase().includes('method not found') || message.toLowerCase().includes('method-not-found')
 }
 
+// The owner refuses a read whose route now serves another conversation (an idle reset or /new
+// rotated it) as `stale_generation`. Nothing on that retired route is controllable, so a read
+// keeps its last snapshot quietly instead of raising the "controls unavailable" banner.
+function isRetiredRouteRead(error: unknown): boolean {
+  const data = isRecord(error) ? error.data : undefined
+  const reason = isRecord(data) ? data.reason : undefined
+
+  if (typeof reason === 'string') {
+    return reason === 'stale_generation'
+  }
+
+  const message = error instanceof Error ? error.message : isRecord(error) && typeof error.message === 'string' ? error.message : ''
+
+  return message.trim() === 'stale_generation'
+}
+
+function finishRetiredRead(sessionId: string, token: number): void {
+  if (!isCurrent(sessionId, token)) {
+    return
+  }
+
+  const current = $sessionControlBySession.get()[sessionId] ?? emptyEntry()
+  publishEntry(sessionId, { ...current, error: null, loading: false })
+}
+
 /** Hydrates one session's structured controls; background refreshes never flash a loading state. */
 export async function refreshSessionControl(
   sessionId: string,
@@ -789,6 +814,12 @@ export async function refreshSessionControl(
 
     if (isSessionGoneForBackgroundPolling(error)) {
       finishGoneRequest(sessionId, token, false)
+
+      return $sessionControlBySession.get()[sessionId]
+    }
+
+    if (isRetiredRouteRead(error)) {
+      finishRetiredRead(sessionId, token)
 
       return $sessionControlBySession.get()[sessionId]
     }
