@@ -89,16 +89,16 @@ function mount(storedId = 'stored', withCron = false) {
 }
 
 describe('bounded direct history runtime', () => {
-  it('shows cron in the live tail but keeps historical pages isolated', async () => {
+  it('keeps cron deliveries out of the live tail and historical pages', async () => {
     vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
     const mounted = mount('stored', true)
     const hasCron = () => mounted.window.currentMessages.some(message => message.id.startsWith('__cron__'))
-    expect(hasCron()).toBe(true)
+    expect(hasCron()).toBe(false)
     await act(async () => { await mounted.window.revealRow(40, new AbortController().signal) })
     expect(hasCron()).toBe(false)
     expect(mounted.view.$messages.get().some(message => message.id.startsWith('__cron__'))).toBe(false)
     act(() => { mounted.window.returnToLatest() })
-    expect(hasCron()).toBe(true)
+    expect(hasCron()).toBe(false)
   })
 
   it('reads one around page and selects it without replacing the live store', async () => {

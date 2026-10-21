@@ -2911,6 +2911,10 @@ def _sweep_completed_oneshots(
             schedule = rj.get("schedule")
             if (schedule.get("kind") if isinstance(schedule, dict) else None) != "once":
                 continue
+            # Parked wake-gate pairs are completed once-jobs between wakes.
+            # A quiet week must not delete the record the gate re-arms.
+            if rj.get("retain_completed") is True:
+                continue
             last_run = rj.get("last_run_at")
             last_run_dt = _parse_aware(last_run) if isinstance(last_run, str) else None
             if last_run_dt is None or last_run_dt >= cutoff:

@@ -52,6 +52,13 @@ async def owner(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_live_entry_with_no_row_does_not_crash_the_list(owner):
+    owner.authority.sessions['ghost'] = owner.authority.sessions['chat']
+    listed = await owner.active(current_session_id='chat')
+    assert 'chat' in listed and 'ghost' not in listed
+
+
+@pytest.mark.asyncio
 async def test_a_running_turn_reads_working_until_it_settles(owner):
     assert (await owner.active())['chat']['status'] == 'idle'
     await owner.submit('hi')

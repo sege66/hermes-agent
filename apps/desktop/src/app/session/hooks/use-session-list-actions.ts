@@ -225,7 +225,13 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
         sessionProfile
       )
 
-      setMessagingSessions(prev => (sameCronSignature(prev, rows) ? prev : rows))
+      // min_messages=1 omits an open empty messaging chat. Without the keep
+      // set the workspace tab loses the row and falls back to "New session".
+      setMessagingSessions(prev => {
+        const next = mergeSessionPage(prev, rows, sessionsToKeep())
+
+        return sameCronSignature(prev, next) ? prev : next
+      })
       // Hit the cap → at least one platform may have more on disk than loaded,
       // so platform sections offer their own per-platform "load more".
       setMessagingTruncated(result.sessions.length >= MESSAGING_SECTION_LIMIT)
@@ -491,7 +497,11 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
             sessionProfile
           )
 
-          setMessagingSessions(prev => (sameCronSignature(prev, messagingRows) ? prev : messagingRows))
+          setMessagingSessions(prev => {
+            const next = mergeSessionPage(prev, messagingRows, sessionsToKeep())
+
+            return sameCronSignature(prev, next) ? prev : next
+          })
           // Hit the cap → at least one platform may have more on disk than loaded.
           setMessagingTruncated(prev =>
             messagingErrors?.length ? prev : result.messaging.sessions.length >= MESSAGING_SECTION_LIMIT

@@ -31,6 +31,7 @@ import {
 } from '@/lib/chat-messages'
 import { markReasoningEffortPending } from '@/lib/chat-runtime'
 import { isMissingRpcMethod } from '@/lib/gateway-rpc'
+import { isMessagingSource } from '@/lib/session-source'
 import { purgeInFlightTurnJournals, recoverInFlightTurnJournal } from '@/lib/inflight-turn-journal'
 import { latestSessionTodoSnapshot } from '@/lib/todos'
 import { setSessionYolo } from '@/lib/yolo-session'
@@ -1776,10 +1777,27 @@ export function useSessionActions({
                 // wipes the just-restored activate/cache transcript (the same
                 // wipe the `activated.messages.length || ...` guard above
                 // already prevents for the activate payload itself).
+                //
+                // A messaging shell whose stored row has no messages is the
+                // opposite: those durable row ids were persisted for some
+                // other conversation. Keeping them paints that transcript
+                // under the empty chat. Unsent local rows have no rowId and
+                // stay, and a messaging row that does have messages still
+                // ignores a transient empty page.
+                const emptyMessagingShellHasForeignRows =
+                  persisted?.messages.length === 0 &&
+                  Boolean(stored) &&
+                  isMessagingSource(stored?.source) &&
+                  !sessionShouldHaveTranscript(stored) &&
+                  !activated.inflight &&
+                  !activated.queued &&
+                  cachedViewState.messages.length > 0 &&
+                  cachedViewState.messages.every(message => message.rowId !== undefined)
+
                 if (
                   persisted &&
                   persistedMatchesActivatedSession &&
-                  (persisted.messages.length || !activatedMessages.length)
+                  (persisted.messages.length || !activatedMessages.length || emptyMessagingShellHasForeignRows)
                 ) {
                   acceptedPersistedDisplayTranscript = Boolean(expectedProvenance)
 
