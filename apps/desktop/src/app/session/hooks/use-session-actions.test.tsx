@@ -3978,6 +3978,7 @@ describe('resumeSession warm-cache mapping integrity', () => {
     setSessionStartedAt(null)
     setMessages([])
     setSessions([])
+    setMessagingSessions([])
     vi.mocked(getSession).mockReset()
     vi.mocked(getLatestSessionMessages)
       .mockReset()
@@ -5666,6 +5667,74 @@ describe('resumeSession warm-cache mapping integrity', () => {
     const renderedMessages = JSON.stringify(resumedState?.messages)
     expect(renderedMessages).toContain('still here after wake')
     expect(renderedMessages).toContain('still here after wake too')
+  })
+
+  it('drops another conversation painted under an empty messaging session', async () => {
+    const runtimeIdByStoredSessionIdRef: MutableRefObject<Map<string, string>> = {
+      current: new Map([['stored-A', 'rt-A']])
+    }
+
+    const state = clientState('stored-A')
+    state.messages = [
+      {
+        id: 'foreign-user',
+        role: 'user',
+        rowId: 9001,
+        parts: [{ type: 'text', text: 'HuggingNews briefing that belongs to cron' }]
+      },
+      {
+        id: 'foreign-assistant',
+        role: 'assistant',
+        rowId: 9002,
+        parts: [{ type: 'text', text: 'DeepSeek Harness foreign tail' }]
+      }
+    ]
+
+    const sessionStateByRuntimeIdRef: MutableRefObject<Map<string, ClientSessionState>> = {
+      current: new Map([['rt-A', state]])
+    }
+
+    const row = storedSession({ id: 'stored-A', message_count: 0, profile: 'default', source: 'telegram', title: null })
+    setMessagingSessions([row])
+    vi.mocked(getSession).mockResolvedValue(row)
+    vi.mocked(getLatestSessionMessages).mockResolvedValue({ messages: [], session_id: 'stored-A' } as never)
+
+    const requestGateway = vi.fn(async (method: string) => {
+      if (method === 'session.activate') {
+        return {
+          session_id: 'rt-A',
+          session_key: 'stored-A',
+          resumed: 'stored-A',
+          message_count: 0,
+          messages: [],
+          messages_omitted: true,
+          running: false,
+          info: {}
+        } as never
+      }
+
+      return {} as never
+    })
+
+    let resumedState: ClientSessionState | undefined
+    let resume: ((storedSessionId: string, replaceRoute?: boolean) => Promise<unknown>) | null = null
+
+    render(
+      <ResumeHarness
+        onReady={ready => (resume = ready)}
+        onStateUpdate={(_sessionId, next) => (resumedState = next)}
+        requestGateway={requestGateway}
+        runtimeIdByStoredSessionIdRef={runtimeIdByStoredSessionIdRef}
+        sessionStateByRuntimeIdRef={sessionStateByRuntimeIdRef}
+      />
+    )
+    await waitFor(() => expect(resume).not.toBeNull())
+    await resume!('stored-A', true)
+
+    const renderedMessages = JSON.stringify(resumedState?.messages ?? [])
+    expect(renderedMessages).not.toContain('HuggingNews briefing that belongs to cron')
+    expect(renderedMessages).not.toContain('DeepSeek Harness foreign tail')
+    expect(resumedState?.messages ?? []).toHaveLength(0)
   })
 
   it('keeps the complete persisted transcript when activating a compressed running session', async () => {

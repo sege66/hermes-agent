@@ -314,7 +314,10 @@ class SessionAuthority:
 
     def _handle(self, ref):
         row = self.db.get_session(ref.session_id)
-        if row is None:  # deleted after ``authorize``: the commit lands before the retirement runs
+        # A live map entry can outlive its row (an empty reset shell deleted, or a mount that
+        # never reserved one). Reading row['runtime_revision'] crashed session.active_list and
+        # took the desktop sidebar poll down with it.
+        if row is None:
             raise RuntimeStoreError('not_found')
         pending = self._pending_rows(ref)
         state = 'unknown' if any(r['status'] == 'unknown' for r in pending) else (
