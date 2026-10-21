@@ -38,7 +38,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api: vi.fn() } })
 })
 
-function mount(storedId = 'stored', withCron = false) {
+function mount(storedId = 'stored', withCron = false, source: null | string = null) {
   const $messages = atom(Array.from({ length: 120 }, (_, index) => message(10_000 + index)))
 
   const view = {
@@ -64,6 +64,8 @@ function mount(storedId = 'stored', withCron = false) {
   queryClient.setQueryData(['cron-deliveries'], withCron
     ? [{ ts: Date.now() / 1000, job_id: 'cron-test', job_name: 'Cron test', text: 'cron delivery' }]
     : [])
+  // The source guard's lookup: a messaging source must keep the mirror off.
+  queryClient.setQueryData(['cron-mirror-session-source', storedId], source)
 
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -89,9 +91,9 @@ function mount(storedId = 'stored', withCron = false) {
 }
 
 describe('bounded direct history runtime', () => {
-  it('keeps cron deliveries out of the live tail and historical pages', async () => {
+  it('keeps cron deliveries out of a messaging session and its history', async () => {
     vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
-    const mounted = mount('stored', true)
+    const mounted = mount('tg-session', true, 'telegram')
     const hasCron = () => mounted.window.currentMessages.some(message => message.id.startsWith('__cron__'))
     expect(hasCron()).toBe(false)
     await act(async () => { await mounted.window.revealRow(40, new AbortController().signal) })
@@ -99,6 +101,12 @@ describe('bounded direct history runtime', () => {
     expect(mounted.view.$messages.get().some(message => message.id.startsWith('__cron__'))).toBe(false)
     act(() => { mounted.window.returnToLatest() })
     expect(hasCron()).toBe(false)
+  })
+
+  it('still shows the cron mirror on the local primary thread', async () => {
+    vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
+    const mounted = mount('stored', true, 'tui')
+    expect(mounted.window.currentMessages.some(message => message.id.startsWith('__cron__'))).toBe(true)
   })
 
   it('reads one around page and selects it without replacing the live store', async () => {

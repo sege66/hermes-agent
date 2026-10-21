@@ -80,6 +80,8 @@ import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { useSessionView } from './session-view'
+import { useCronMergeMessages } from './use-cron-merge'
+import { mergeCronMessages } from './merge-cron-messages'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { routedSessionIsLoading, threadLoadingState } from './thread-loading'
 import {
@@ -299,9 +301,16 @@ export function ChatRuntimeBoundary({
   // History is a static display page. The live store continues streaming but
   // no delta subscribes/reconverts this historical runtime until return.
   const storeMessages = useMessagesWhileVisible(view.$messages, !history.page)
-  // Cron deliveries are not this session's transcript. Painting the last 24h
-  // onto the primary thread made an empty Telegram chat show another job.
-  const messages = suppressMessages ? NO_MESSAGES : storeMessages
+  // ki66: interleave the read-only cron mirror on the LOCAL primary thread
+  // only. Pure-script cron jobs deliver stdout straight to Telegram without
+  // creating an agent session, so the session-derived store misses them; the
+  // mirror backfills them here. A messaging session never gets it — its chat
+  // is that platform's own transcript (use-cron-merge guards by source).
+  const cronMessages = useCronMergeMessages(view.kind === 'primary', storedId)
+  const messages = useMemo(
+    () => (suppressMessages ? NO_MESSAGES : mergeCronMessages(storeMessages, cronMessages)),
+    [cronMessages, storeMessages, suppressMessages]
+  )
 
   const [windowPages, setWindowPages] = useState(1)
   const [windowSessionKey, setWindowSessionKey] = useState(runtimeId)
