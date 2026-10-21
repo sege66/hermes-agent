@@ -11,6 +11,18 @@ import sqlite3
 import sys
 import threading
 
+
+def _pm_generation_dirs(prefixes) -> set[Path]:
+    """The PM generation dir (``<installs>/<key>/{environments,test-environment}/<gen>``) around
+    each prefix that is a generation's ``venv``."""
+    found = set()
+    for prefix in prefixes:
+        venv = Path(prefix).resolve()
+        if venv.name in ("venv", ".venv") and venv.parent.parent.name in ("environments", "test-environment"):
+            found.add(venv.parent)
+    return found
+
+
 _INTERPRETER_PREFIXES = tuple({
     candidate for p in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix)
     for candidate in (Path(p).absolute(), Path(p).resolve())
@@ -20,6 +32,12 @@ _INTERPRETER_PREFIXES = tuple({
     # interpreter's installation, not Hermes state.
     candidate for p in sys.path if p and Path(p).name in ("site-packages", "dist-packages")
     for candidate in (Path(p).absolute(), Path(p).resolve())
+} | {
+    # scripts/run_tests.sh runs a PM generation venv (<installs>/<key>/{environments,test-environment}
+    # /<gen>/venv) that sits under the home whenever HOME is the run's fake home. The generation dir
+    # around the venv is that interpreter's installation too: `hermes update` probes
+    # <venv>/../hermes_cli/main.py to find the checkout owning its venv (update_owning_install).
+    *_pm_generation_dirs((sys.prefix, sys.exec_prefix)),
 } | {
     # The default install checks the repo out INSIDE the home (install.sh:
     # INSTALL_DIR=$HERMES_HOME/hermes-agent). Reading test data, sources for tracebacks, or the
