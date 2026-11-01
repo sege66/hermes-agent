@@ -40,6 +40,24 @@ export async function resolveGatewayWsUrl(deps: ResolveGatewayWsUrlDeps, conn: G
   const mint = deps.getGatewayWsUrl
   const profile = conn.profile ?? null
 
+  if (conn.authMode === 'native') {
+    if (!mint) {
+      throw new Error('Native gateway requires a fresh private ticket')
+    }
+
+    const result = await mint(profile)
+
+    if (typeof result === 'string') {
+      return result
+    }
+
+    if (!result.ok) {
+      throw new Error(result.error || 'Could not refresh the native gateway WebSocket ticket.')
+    }
+
+    return result.wsUrl
+  }
+
   if (conn.authMode === 'oauth') {
     if (!mint) {
       throw new Error('This Desktop build cannot refresh OAuth WebSocket tickets. Update Hermes Desktop and try again.')

@@ -231,9 +231,8 @@ export class JsonRpcGatewayClient {
       return
     }
 
-    this.setState('connecting')
-
     const socket = this.options.socketFactory?.(wsUrl) ?? new WebSocket(wsUrl)
+    this.setState('connecting')
     const transport = socketTransport(socket)
     this.socket = socket
     this.channel.stopHeartbeat()
