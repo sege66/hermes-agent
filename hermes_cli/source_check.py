@@ -394,6 +394,12 @@ def _hold_refused_release(result: dict, co: _Checkout, home: Path) -> None:
     stores use). Covers releases off this checkout's history too, which the ancestry-only rollback
     test cannot see. Apply only after caching the release facts: stores can gain runtime history,
     or the only ledgered profile can be removed, between checks."""
+    # The protected owner merges releases; an ancestor is already installed, never a rollback.
+    coordinator = home / "bin" / "hermes-update-coordinator"
+    if (result.get("rollback") and co.root == (home / "hermes-agent").resolve()
+            and coordinator.is_file() and os.access(coordinator, os.X_OK)):
+        result.update(updateAvailable=False, behind=0, rollback=False, aheadOfRelease=True)
+        return
     target = result.get("targetSha")
     if result.get("updateAvailable") and target and _update_refuses(co, target, home):
         result.update(updateAvailable=False, behind=0, held="downgrade", rollback=False)

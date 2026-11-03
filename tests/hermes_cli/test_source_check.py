@@ -592,6 +592,39 @@ def test_stable_release_the_checkout_already_contains_is_a_rollback(installation
     assert status["rollback"] is rollback
 
 
+@pytest.mark.parametrize("owner", ["canonical", "other-checkout", "not-executable"])
+@pytest.mark.parametrize("release,on", [("base", "head"), ("head", "base")])
+def test_protected_checkout_offers_only_unmerged_releases(installation, tmp_path, owner, release, on):
+    from hermes_cli.source_check import check_for_updates
+
+    root, _linked, home, base, head, responses, _requests, git = installation
+    shas = {"base": base, "head": head}
+    bare = tmp_path / "origin.git"
+    git("clone", "-q", "--bare", str(root), str(bare), cwd=tmp_path)
+    git("tag", "v1.2.3", shas[release], cwd=bare)
+    git("remote", "set-url", "origin", str(bare))
+    git("checkout", "-q", "--detach", shas[on])
+    api = "/repos/NousResearch/hermes-agent"
+    responses[f"{api}/releases/latest"] = (200, {"draft": False, "prerelease": False, "tag_name": "v1.2.3"})
+    responses[f"{api}/commits/v1.2.3"] = (200, {"sha": shas[release]})
+    # Cache the upstream verdict before the protected owner becomes available.
+    assert check_for_updates(install_root=root, home=home, channel="stable", force=True)["updateAvailable"]
+    (home / "hermes-agent").symlink_to(root if owner != "other-checkout" else tmp_path)
+    coordinator = home / "bin" / "hermes-update-coordinator"
+    coordinator.parent.mkdir()
+    coordinator.write_text("#!/bin/sh\nexit 0\n")
+    coordinator.chmod(0o644 if owner == "not-executable" else 0o755)
+
+    for force in (False, True):
+        status = check_for_updates(install_root=root, home=home, channel="stable", force=force)
+        integrated = owner == "canonical" and release == "base"
+        assert status["targetSha"] == shas[release]
+        assert status["updateAvailable"] is not integrated
+        assert status["rollback"] is (release == "base" and not integrated)
+        if integrated:
+            assert status["behind"] == 0 and status["aheadOfRelease"] is True
+
+
 @pytest.mark.parametrize("ledgered", [True, False])
 @pytest.mark.parametrize("divergent", [True, False], ids=["beside-history", "in-history"])
 def test_stable_release_the_updater_refuses_is_held_not_offered(
