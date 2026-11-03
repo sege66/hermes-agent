@@ -137,3 +137,30 @@ it('a failed updater spawn leaves the app open', async () => {
   expect(await handOffMacUpdateToCoordinator(deps)).toMatchObject({ ok: false })
   expect(deps.quit).not.toHaveBeenCalled()
 })
+
+
+it('observes a real detached updater claim before closing the app', async () => {
+  const deps = fixture()
+  vi.mocked(processes.spawnUpdaterProcess).mockRestore()
+  vi.mocked(processes.observeUpdaterHandoff).mockRestore()
+  vi.mocked(markers.waitForHandoffClaim).mockRestore()
+  vi.mocked(processes.killHandoffTree).mockRestore()
+  const done = path.join(deps.hermesHome, 'done')
+  const applied = path.join(deps.hermesHome, 'applied')
+  fs.writeFileSync(path.join(deps.hermesHome, 'bin', 'hermes-update-coordinator'), `#!/bin/bash
+case " $* " in *" --dry-run "*) exit 0;; esac
+printf '%s\\n%s\\n' "$$" "$(date +%s)" > "$HERMES_HOME/.hermes-update-in-progress"
+trap 'rm -f "$HERMES_HOME/.hermes-update-in-progress"' EXIT
+for i in {1..50}; do
+  if [ -f "$HERMES_HOME/done" ]; then printf '%s' "$HERMES_UPDATE_TARGET_SHA" > "$HERMES_HOME/applied"; exit 0; fi
+  sleep 0.1
+done
+exit 7
+`)
+  vi.mocked(source.sourceUpdateEnvironment).mockResolvedValue({ PATH: process.env.PATH, HERMES_HOME: deps.hermesHome })
+  deps.quit = () => fs.writeFileSync(done, 'quit observed')
+  const result = await handOffMacUpdateToCoordinator(deps)
+  expect(result).toMatchObject({ ok: true, handedOff: true })
+  await vi.waitFor(() => expect(fs.readFileSync(applied, 'utf8')).toBe('a'.repeat(40)))
+  await vi.waitFor(() => expect(fs.existsSync(path.join(deps.hermesHome, '.hermes-update-in-progress'))).toBe(false))
+})
