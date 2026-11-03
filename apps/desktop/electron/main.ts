@@ -645,6 +645,7 @@ import { ChannelStrategy } from './updater/channel-strategy'
 import { verifyPreparedChannelInstaller } from './updater/channel-windows-host'
 import { type CheckoutStrategy, createCheckoutStrategy } from './updater/checkout'
 import { readSourceUpdate, sourceChannelName, type SourceUpdate } from './updater/checkout-source'
+import { handOffMacUpdateToCoordinator } from './updater/coordinator'
 import { ExternalStrategy } from './updater/external'
 import { readUpdatesFeedBaseFromConfig, resolveFeedBaseUrl } from './updater/feed-config'
 import { createChannelMacStrategy, createMacStrategy } from './updater/mac-client'
@@ -4358,7 +4359,21 @@ async function applyUpdates(): Promise<UpdaterApplyResultWire> {
         return managedBusy
       }
 
-      const coordinated = await handOffMacUpdateToCoordinator()
+      const coordinated = await handOffMacUpdateToCoordinator({
+        hermesHome: HERMES_HOME,
+        updateRoot: resolveUpdateRoot(),
+        isMac: IS_MAC,
+        appBundle: runningAppBundle(),
+        check: () => resolveCheckoutUpdateStrategy().check({ force: true }),
+        remoteGatewayActive: globalRemoteActive,
+        emitUpdateProgress,
+        rememberLog,
+        dwellMs: UPDATE_HANDOFF_DWELL_MS,
+        quit: () => {
+          isQuittingForHandoff = true
+          app.quit()
+        }
+      })
 
       if (coordinated) {
         handedOff = coordinated.handedOff === true
@@ -4503,69 +4518,6 @@ function runningAppBundle() {
   } // -> .../X.app
 
   return dir.endsWith('.app') ? dir : null
-}
-
-async function handOffMacUpdateToCoordinator(): Promise<UpdaterApplyResultWire | null> {
-  const coordinator = path.join(HERMES_HOME, 'bin', 'hermes-update-coordinator')
-  const updateRoot = resolveUpdateRoot()
-
-  if (!IS_MAC || !fileExists(coordinator) || runningAppBundle() !== '/Applications/Hermes.app') {
-    return null
-  }
-
-  const conflict = await updateHandoffConflict(HERMES_HOME)
-  if (conflict) {
-    emitUpdateProgress({ stage: 'error', message: conflict.message, percent: null })
-    return { ok: false, error: conflict.message }
-  }
-
-  const env = {
-    ...process.env,
-    HERMES_HOME,
-    PATH: [path.join(updateRoot, 'venv', 'bin'), process.env.PATH].filter(Boolean).join(path.delimiter)
-  }
-  emitUpdateProgress({
-    stage: 'checking',
-    message: 'Checking whether this update can apply without closing the window…',
-    percent: 8
-  })
-  try {
-    execFileSync(coordinator, ['update', '--dry-run', '--source', 'desktop-preflight'], {
-      cwd: updateRoot,
-      env,
-      timeout: 300_000,
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-  } catch (error) {
-    rememberLog(`[updates] coordinator preflight blocked hand-off: ${error instanceof Error ? error.message.slice(0, 400) : String(error)}`)
-    const message = 'Update cannot apply yet — local patches still conflict with upstream. This window will stay open.'
-    emitUpdateProgress({ stage: 'error', message, percent: null })
-    return { ok: false, error: message }
-  }
-
-  const branch = readDesktopUpdateConfig().branch
-  const child = spawn(coordinator, [
-    'update', '--source', 'desktop-app', '--retry-once', '--',
-    '--yes', '--gateway', '--force', '--branch', branch
-  ], {
-    cwd: updateRoot,
-    env: { ...env, HERMES_UPDATE_COORDINATOR_OWNS_DESKTOP: '1' },
-    detached: true,
-    stdio: 'ignore'
-  })
-  child.unref()
-  const handoff = await observeUpdaterHandoff(child, UPDATE_HANDOFF_DWELL_MS)
-  if (!handoff.ok) {
-    emitUpdateProgress({ stage: 'error', message: handoff.message, percent: null })
-    return { ok: false, error: handoff.message }
-  }
-  if (Number.isInteger(child.pid)) {
-    writeUpdateMarker(HERMES_HOME, child.pid)
-  }
-  emitUpdateProgress({ stage: 'restart', message: 'Updating Hermes. The app will reopen automatically.', percent: 100 })
-  isQuittingForHandoff = true
-  app.quit()
-  return { ok: true, handedOff: true, updater: coordinator }
 }
 
 // macOS/Linux update hand-off: spawn the repo-owned posix orchestrator
