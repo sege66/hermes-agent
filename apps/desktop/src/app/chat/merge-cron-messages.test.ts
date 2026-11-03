@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { chatMessageText, preserveLocalAssistantErrors, textPart, toChatMessages, type ChatMessage } from '@/lib/chat-messages'
+import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, textPart, toChatMessages } from '@/lib/chat-messages'
 import type { SessionMessage } from '@/types/hermes'
 
 import { mergeCronMessages } from './merge-cron-messages'

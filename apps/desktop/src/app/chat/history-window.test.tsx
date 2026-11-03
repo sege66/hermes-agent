@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAssistantRuntime } from '@assistant-ui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -94,7 +94,7 @@ describe('bounded direct history runtime', () => {
   it('keeps cron deliveries out of a messaging session and its history', async () => {
     vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
     const mounted = mount('tg-session', true, 'telegram')
-    const hasCron = () => mounted.window.currentMessages.some(message => message.id.startsWith('__cron__'))
+    const hasCron = () => mounted.runtime.thread.getState().messages.some(message => message.id.startsWith('__cron__'))
     expect(hasCron()).toBe(false)
     await act(async () => { await mounted.window.revealRow(40, new AbortController().signal) })
     expect(hasCron()).toBe(false)
@@ -106,7 +106,33 @@ describe('bounded direct history runtime', () => {
   it('still shows the cron mirror on the local primary thread', async () => {
     vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
     const mounted = mount('stored', true, 'tui')
-    expect(mounted.window.currentMessages.some(message => message.id.startsWith('__cron__'))).toBe(true)
+    expect(mounted.runtime.thread.getState().messages.some(message => message.id.startsWith('__cron__'))).toBe(true)
+  })
+
+  it('keeps navigation consumers stable while a live assistant reply advances', () => {
+    const mounted = mount()
+
+    const live: ChatMessage = {
+      id: 'streaming',
+      role: 'assistant',
+      pending: true,
+      parts: [{ type: 'text', text: 'Working' }]
+    }
+
+    const prefix = mounted.view.$messages.get()
+
+    act(() => mounted.view.$messages.set([...prefix, live]))
+    const navigation = mounted.window
+
+    act(() =>
+      mounted.view.$messages.set([...prefix, { ...live, parts: [{ type: 'text', text: 'Working on the next step' }] }])
+    )
+
+    expect(mounted.window).toBe(navigation)
+    expect(mounted.runtime.thread.getState().messages.at(-1)?.content[0]).toMatchObject({
+      type: 'text',
+      text: 'Working on the next step'
+    })
   })
 
   it('reads one around page and selects it without replacing the live store', async () => {

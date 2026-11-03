@@ -74,14 +74,13 @@ import { useHistoryWindow } from './history-window'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { shouldShowIntro } from './intro-visibility'
+import { mergeCronMessages } from './merge-cron-messages'
 import { ProfileTag } from './profile-tag'
 import { ResumeExhaustedOverlay } from './resume-exhausted-overlay'
 import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { useSessionView } from './session-view'
-import { useCronMergeMessages } from './use-cron-merge'
-import { mergeCronMessages } from './merge-cron-messages'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { routedSessionIsLoading, threadLoadingState } from './thread-loading'
 import {
@@ -91,6 +90,7 @@ import {
 } from './transcript-backfill'
 import { advanceSessionTranscriptWindow, type SessionWindowMemo } from './transcript-window'
 import { useChatBarState } from './use-chat-bar-state'
+import { useCronMergeMessages } from './use-cron-merge'
 import { useTranscriptRetention } from './use-transcript-retention'
 
 interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
@@ -431,6 +431,7 @@ export function ChatRuntimeBoundary({
   const isHistorical = Boolean(history.page)
   const newerAvailable = history.page?.newerAvailable ?? false
   const { revealRow, returnToLatest } = history
+  const historicalMessages = history.page?.messages
 
   const transcriptWindow = useMemo(
     () => ({
@@ -438,11 +439,13 @@ export function ChatRuntimeBoundary({
       expandWindow,
       revealRow,
       returnToLatest,
-      currentMessages,
+      // Live navigation reads the session store. Broadcasting the changing
+      // live tail here invalidates the entire transcript's navigation context.
+      currentMessages: historicalMessages ?? [],
       isHistorical,
       newerAvailable
     }),
-    [expandWindow, olderAvailable, revealRow, returnToLatest, currentMessages, isHistorical, newerAvailable]
+    [expandWindow, olderAvailable, revealRow, returnToLatest, historicalMessages, isHistorical, newerAvailable]
   )
 
   const runtime = useIncrementalExternalStoreRuntime<ThreadMessage>({
