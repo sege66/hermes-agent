@@ -73,7 +73,7 @@ export async function handOffMacUpdateToCoordinator(deps: CoordinatorDeps): Prom
     await execute(coordinator, ['update', '--dry-run', '--source', 'desktop-preflight', '--', ...updateArgs], {
       cwd: deps.updateRoot,
       env,
-      timeout: 300_000,
+      timeout: 900_000,
       maxBuffer: 1024 * 1024
     })
   } catch (error: unknown) {
