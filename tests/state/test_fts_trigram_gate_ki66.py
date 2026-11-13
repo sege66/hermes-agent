@@ -8,7 +8,7 @@ free to reintroduce a path that rebuilds the index behind the gate's back.
 That has now happened twice:
 
 * 2026-08-04 — SessionDB was split into four sibling modules and the gate had
-  to be re-ported to ``hermes_state_common.fts_trigram_disabled``.
+  to be re-ported to ``hermes_state_ki66.fts_trigram_disabled``.
 * 2026-08-10 — upstream added ``_recover_stale_fts`` (atomic stale-index
   recovery). It decided what to rebuild purely from "does the table exist in
   this DB", so a single corruption-recovery pass silently restored the whole

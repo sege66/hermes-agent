@@ -165,7 +165,7 @@ class CLIStreamMixin:
                 or buf.endswith(("\n\n", ".\n", "!\n", "?\n", ":\n"))):
                 flush_text, buf = buf[: line_break + 1], buf[line_break + 1 :]
             else:
-                from cli import _cut_stream_at_display_width, _stream_display_width
+                from hermes_cli.ki66_display import _cut_stream_at_display_width, _stream_display_width
                 if _stream_display_width(buf) >= target_width:
                     chunk, rest = _cut_stream_at_display_width(buf, target_width)
                     if chunk:
