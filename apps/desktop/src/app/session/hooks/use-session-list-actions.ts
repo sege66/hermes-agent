@@ -54,6 +54,8 @@ import { $sessionTiles, $workingSessionIds, getRecentlySettledSessionIds } from 
 
 import { refreshCronJobs as refreshCronJobsStore } from '../../cron/cron-actions'
 
+import { keepOpenMessagingRows } from './use-session-list-actions.ki66'
+
 // The recents list is local-only: cron rows have their own section, kanban
 // dispatcher workers are read on the board, finite one-shot runs (`hermes -z`,
 // `chat -q`) are not conversations, and each messaging platform
@@ -226,13 +228,7 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
         sessionProfile
       )
 
-      // min_messages=1 omits an open empty messaging chat. Without the keep
-      // set the workspace tab loses the row and falls back to "New session".
-      setMessagingSessions(prev => {
-        const next = mergeSessionPage(prev, rows, sessionsToKeep())
-
-        return sameCronSignature(prev, next) ? prev : next
-      })
+      setMessagingSessions(prev => keepOpenMessagingRows(prev, rows, sessionsToKeep()))
       // Hit the cap → at least one platform may have more on disk than loaded,
       // so platform sections offer their own per-platform "load more".
       setMessagingTruncated(result.sessions.length >= MESSAGING_SECTION_LIMIT)
@@ -499,11 +495,7 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
             sessionProfile
           )
 
-          setMessagingSessions(prev => {
-            const next = mergeSessionPage(prev, messagingRows, sessionsToKeep())
-
-            return sameCronSignature(prev, next) ? prev : next
-          })
+          setMessagingSessions(prev => keepOpenMessagingRows(prev, messagingRows, sessionsToKeep()))
           // Hit the cap → at least one platform may have more on disk than loaded.
           setMessagingTruncated(prev =>
             messagingErrors?.length ? prev : result.messaging.sessions.length >= MESSAGING_SECTION_LIMIT

@@ -81,24 +81,6 @@ def test_update_preserves_local_work_and_rescues_orphan_before_reset(
             assert 'commit(s) not on origin/main leave the branch' in output
 
 
-def test_same_branch_local_commits_merge_without_reset(update_tree, monkeypatch):
-    t = update_tree
-    git(t.clone, 'checkout', '-q', 'main')
-    (t.clone / 'local.txt').write_text('local commit\n', encoding='utf-8')
-    git(t.clone, 'add', 'local.txt')
-    git(t.clone, '-c', 'commit.gpgsign=false', 'commit', '-qm', 'local history')
-    before = git(t.clone, 'rev-parse', 'HEAD')
-    git(t.clone, 'fetch', '-q', 'origin', 'main')
-    monkeypatch.setattr(hermes_main, 'PROJECT_ROOT', t.clone)
-
-    update_cmd._reconcile_diverged_checkout(['git'], 'main', before)
-
-    assert (t.clone / 'local.txt').read_text(encoding='utf-8') == 'local commit\n'
-    assert git(t.clone, 'merge-base', '--is-ancestor', before, 'HEAD') == ''
-    assert git(t.clone, 'merge-base', '--is-ancestor', t.newer, 'HEAD') == ''
-    assert not git(t.clone, 'for-each-ref', '--format=%(refname)', 'refs/hermes-update-backups/')
-
-
 @pytest.mark.parametrize('mode', ['count', 'age', 'unparseable'])
 def test_rescue_retention_uses_real_refs(tmp_path, monkeypatch, mode):
     from datetime import datetime, timedelta, timezone

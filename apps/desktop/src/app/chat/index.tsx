@@ -70,11 +70,11 @@ import {
   useComposerScope,
   useComposerSurfaceId
 } from './composer/scope'
+import { mergeCronMessages, useCronMergeMessages } from './cron-mirror.ki66'
 import { useHistoryWindow } from './history-window'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { shouldShowIntro } from './intro-visibility'
-import { mergeCronMessages } from './merge-cron-messages'
 import { ProfileTag } from './profile-tag'
 import { ResumeExhaustedOverlay } from './resume-exhausted-overlay'
 import { isRouteSessionMismatch } from './route-session-state'
@@ -90,7 +90,6 @@ import {
 } from './transcript-backfill'
 import { advanceSessionTranscriptWindow, type SessionWindowMemo } from './transcript-window'
 import { useChatBarState } from './use-chat-bar-state'
-import { useCronMergeMessages } from './use-cron-merge'
 import { useTranscriptRetention } from './use-transcript-retention'
 
 interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
@@ -301,12 +300,9 @@ export function ChatRuntimeBoundary({
   // History is a static display page. The live store continues streaming but
   // no delta subscribes/reconverts this historical runtime until return.
   const storeMessages = useMessagesWhileVisible(view.$messages, !history.page)
-  // ki66: interleave the read-only cron mirror on the LOCAL primary thread
-  // only. Pure-script cron jobs deliver stdout straight to Telegram without
-  // creating an agent session, so the session-derived store misses them; the
-  // mirror backfills them here. A messaging session never gets it — its chat
-  // is that platform's own transcript (use-cron-merge guards by source).
+  // ki66: read-only cron mirror on the LOCAL primary thread only (cron-mirror.ki66.ts).
   const cronMessages = useCronMergeMessages(view.kind === 'primary', storedId)
+
   const messages = useMemo(
     () => (suppressMessages ? NO_MESSAGES : mergeCronMessages(storeMessages, cronMessages)),
     [cronMessages, storeMessages, suppressMessages]

@@ -30,10 +30,8 @@ const assistantTimelineMatch = (stored: ChatMessage, local: ChatMessage) => {
       .map(part => (part.type === 'tool-call' ? part.toolCallId : ''))
   )
 
-  // Two different durable rows are never the same message, however similar
-  // their prose. Without this a repeated identical reply ("안녕" → the same
-  // greeting 25 minutes later) matched the earlier twin and inherited its
-  // timestamp, which the cron interleave then sorted into the wrong place.
+  // ki66: two different durable rows are never the same message — a repeated identical reply must not
+  // inherit its earlier twin's timestamp (the cron interleave then sorted it into the wrong place).
   if (stored.rowId !== undefined && local.rowId !== undefined && stored.rowId !== local.rowId) {
     return false
   }

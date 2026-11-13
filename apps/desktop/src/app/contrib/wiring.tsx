@@ -185,6 +185,7 @@ import {
   useOpenKeybindsListener,
   usePublishRestartPreviewServer
 } from './wiring-effects'
+import { handleExternalSessionUpdate, useExternalSessionSync } from './wiring.ki66'
 
 // Overlay views the controller mounts over the shell — lazy, load on demand.
 // The workspace-route full-page views (skills/messaging/artifacts) are the
@@ -201,40 +202,6 @@ const StarmapView = lazy(async () => ({ default: (await import('../starmap')).St
 // WiringActions/WiringApi contracts all live in sibling modules — this file is
 // the controller that assembles them.
 export { WiredPane } from './context'
-
-export function externalSessionReplacement(selectedStoredSessionId: string | null | undefined, payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') {
-    return null
-  }
-
-  const candidate = payload as { previous_session_id?: unknown; stored_session_id?: unknown }
-  const previousSessionId =
-    typeof candidate.previous_session_id === 'string' ? candidate.previous_session_id.trim() : ''
-  const storedSessionId = typeof candidate.stored_session_id === 'string' ? candidate.stored_session_id.trim() : ''
-
-  return previousSessionId && storedSessionId && selectedStoredSessionId === previousSessionId ? storedSessionId : null
-}
-
-interface ExternalSessionUpdateActions {
-  refreshActiveTranscript: () => Promise<unknown>
-  refreshMessagingSessions: () => Promise<unknown>
-  replaceSessionRoute: (storedSessionId: string) => void
-}
-
-export async function refreshExternalSessionUpdate(
-  replacementSessionId: string | null,
-  actions: ExternalSessionUpdateActions
-): Promise<void> {
-  await actions.refreshMessagingSessions()
-
-  if (replacementSessionId) {
-    actions.replaceSessionRoute(replacementSessionId)
-
-    return
-  }
-
-  await actions.refreshActiveTranscript()
-}
 
 // Generic in-app route intents raised by toast recovery buttons (Open Keys,
 // Open Gateways, Maintenance …) fired from stores with no router context.
@@ -542,6 +509,9 @@ export function ContribWiring({ children }: { children: ReactNode }) {
       }),
     [activeSessionIdRef, busyRef, selectedStoredSessionIdRef, updateSessionState]
   )
+
+  // ki66: actions behind the `session.external_updated` branch of the gateway event handler below.
+  useExternalSessionSync({ navigate, refreshActiveTranscript, refreshMessagingSessions, selectedStoredSessionIdRef })
 
   const { handleGatewayEvent, handleServerRequest } = useMessageStream({
     activeGatewayProfile,
@@ -901,31 +871,16 @@ export function ContribWiring({ children }: { children: ReactNode }) {
         return
       }
 
-      // ki66: a turn that arrived on Telegram was written to state.db by the
-      // always-on gateway process, not by this window's runtime — nothing in
-      // the normal event flow carries it. Refetch instead of routing it
-      // through the desktop handler, which expects locally-originated frames.
+      // ki66: an external (Telegram) turn or `/new` — refetch or follow instead of the desktop handler.
       if (event.type === 'session.external_updated') {
-        const replacementSessionId = externalSessionReplacement(selectedStoredSessionIdRef.current, event.payload)
-        void refreshExternalSessionUpdate(replacementSessionId, {
-          refreshActiveTranscript,
-          refreshMessagingSessions,
-          replaceSessionRoute: storedSessionId => navigate(sessionRoute(storedSessionId), { replace: true })
-        }).catch(() => undefined)
+        handleExternalSessionUpdate(event.payload)
 
         return
       }
 
       handleDesktopGatewayEvent(event)
     },
-    [
-      handleDesktopGatewayEvent,
-      navigate,
-      refreshActiveTranscript,
-      refreshMessagingSessions,
-      selectedStoredSessionIdRef,
-      startFreshSessionDraft
-    ]
+    [handleDesktopGatewayEvent, startFreshSessionDraft]
   )
 
   useGatewayBoot({

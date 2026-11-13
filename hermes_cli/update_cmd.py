@@ -33,6 +33,7 @@ from hermes_cli import update_cmd_commit as _commit
 from hermes_cli import update_cmd_posix_pause as _posix_pause
 from hermes_cli.update_cmd_pause_gate import _checkout_move, _moves_for
 from hermes_cli import update_cmd_check as _check
+from hermes_cli import update_ki66 as _ki66
 
 # Re-exports: every split-module name stays reachable (and monkeypatchable) as update_cmd.<name>.
 from hermes_cli.update_abort_recovery import (
@@ -820,12 +821,12 @@ def _complete_source_update(request: dict | None) -> None:
 
 
 def _reconcile_diverged_checkout(git_cmd, branch: str, pre_pull_sha, *, target_ref=None) -> None:
-    """Reconcile proven divergence while preserving unique local commits.
+    """Reconcile a proven non-fast-forwardable checkout.
 
-    The caller must establish that HEAD is not an ancestor of the target;
-    ordinary fast-forward failures must never reach this recovery path.
-    Merge local history, and rescue/reset only history without a common ancestor.
-    """
+    The caller must first establish that HEAD is not an ancestor of the update target; ordinary
+    fast-forward failures (locks, object transport errors) must never reach this destructive path.
+    Merge on a custom branch (local commits survive) or reset --hard on the same branch after
+    parking the old HEAD behind a rescue ref. ``sys.exit(1)`` on failure."""
     # A custom branch (local commits atop origin/<branch>) also can't ff, and reset --hard
     # would discard that work: merge instead, stop on conflict.
     merge_ref = target_ref if target_ref is not None else f"origin/{branch}"
@@ -844,20 +845,15 @@ def _reconcile_diverged_checkout(git_cmd, branch: str, pre_pull_sha, *, target_r
             _record_stop("merge_conflict")
             sys.exit(1)
         return
+    # Same branch and proven non-ancestor: an upstream force-push/rebase may lose nothing,
+    # while local commits on this branch lose everything. The reflog is only an expiring
+    # recovery path, so park pre_pull_sha behind a rescue ref for BOTH, orphan divergence
+    # (no common ancestor: corrupted HEAD, re-init) included.
     merge_base_result = _git_run(git_cmd, ["merge-base", "HEAD", merge_ref])
     has_common_ancestor = bool(
         merge_base_result.returncode == 0 and merge_base_result.stdout.strip())
-    local_ahead = _count_commits_between(git_cmd, _m().PROJECT_ROOT, merge_ref, "HEAD")
-    if has_common_ancestor and local_ahead > 0:
-        print(f"  ⚠ Local HEAD is {local_ahead} unique commit(s) ahead of {merge_ref} — merging to preserve them...")
-        _git_run(git_cmd, ["tag", f"pre-update-{_time.strftime('%Y%m%d-%H%M%S')}"])
-        if _git_run(git_cmd, ["merge", "--no-edit", merge_ref]).returncode != 0:
-            _git_run(git_cmd, ["merge", "--abort"])
-            print("✗ Merge conflict between local commits and upstream — update stopped.")
-            print(f"  Resolve manually: cd {_m().PROJECT_ROOT} && git merge {merge_ref}")
-            sys.exit(1)
+    if _ki66.merge_unique_local_commits(git_cmd, merge_ref, has_common_ancestor):
         return
-    # Orphaned history has no common ancestor; park the old tip before reset.
     if pre_pull_sha:
         from datetime import datetime as _dt, timezone
         # SHA suffix so two updates in the same second get distinct refs.
@@ -1066,7 +1062,7 @@ def _pull_updates(
     keep_stash, target_ref=None, pre_sync_sha=None, rollback_branch=None, sync_upstream=False, assume_yes=False,
     in_place_update=False, _windows_gateway_resume=None, expected_sha=None):
     """Fast-forward onto ``origin/<branch>`` and settle the autostash. Divergence by shape:
-    unique local commits -> merge, orphan history -> rescue ref then reset; a
+    custom branch -> merge, same branch -> rescue ref then reset; a
     post-pull syntax error in a critical file rolls back. Exits on failure; returns the SHA HEAD had to move off."""
     update_succeeded = False
     # Rescue refs must retain the immediate pre-pull tip, even when syntax
@@ -1841,19 +1837,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
     completion_request = _source_completion_request(
         opts, _pre_update_plan, pre_update_snapshot_id, _windows_gateway_resume,
         had_desktop_app_before_update, gateway_mode)
-    protected_head = os.environ.get("HERMES_PROTECTED_UPDATE_HEAD")
-    if protected_head:
-        # The coordinator already merged and verified this tree. A second
-        # remote selection could install code that never passed its preflight.
-        if (os.environ.get("HERMES_UPDATE_COORDINATOR_ACTIVE") != "1"
-                or use_zip_update
-                or _capture_head_sha(git_cmd, _m().PROJECT_ROOT) != protected_head):
-            print("✗ Protected update target does not match this checkout. No completion was applied.")
-            _m()._resume_windows_gateways_after_update(_windows_gateway_resume)
-            sys.exit(1)
-        completion_request["expected_sha"] = protected_head
-        completion_request["branch"] = _git_run(git_cmd, ["branch", "--show-current"]).stdout.strip()
-        _complete_source_update(completion_request)
+    if _ki66.complete_protected_update(git_cmd, use_zip_update, completion_request, _windows_gateway_resume):
         return
     branch = _m()._resolve_update_branch(args)
     completion_request["branch"] = branch

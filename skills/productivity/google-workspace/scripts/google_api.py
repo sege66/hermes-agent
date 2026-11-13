@@ -41,7 +41,6 @@ from _hermes_home import get_hermes_home
 HERMES_HOME = get_hermes_home()
 TOKEN_PATH = HERMES_HOME / "google_token.json"
 CLIENT_SECRET_PATH = HERMES_HOME / "google_client_secret.json"
-GWS_CREDENTIALS_PATH = HERMES_HOME / "google_gws_credentials.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -87,29 +86,20 @@ def _gws_binary() -> str | None:
     return shutil.which("gws")
 
 
+import _google_api_ki66  # ki66 local helpers (sibling module)  # noqa: E402
+
+GWS_CREDENTIALS_PATH = HERMES_HOME / "google_gws_credentials.json"
+
+
 def _ensure_gws_credentials_file() -> Path:
-    token = _normalize_authorized_user_payload(json.loads(TOKEN_PATH.read_text()))
-    payload = {
-        "client_id": token["client_id"],
-        "client_secret": token["client_secret"],
-        "refresh_token": token["refresh_token"],
-        "type": "authorized_user",
-    }
-    existing = None
-    if GWS_CREDENTIALS_PATH.exists():
-        try:
-            existing = json.loads(GWS_CREDENTIALS_PATH.read_text())
-        except Exception:
-            existing = None
-    if existing != payload:
-        GWS_CREDENTIALS_PATH.write_text(json.dumps(payload, indent=2))
-        GWS_CREDENTIALS_PATH.chmod(0o600)
-    return GWS_CREDENTIALS_PATH
+    return _google_api_ki66.ensure_gws_credentials_file(
+        TOKEN_PATH, GWS_CREDENTIALS_PATH, _normalize_authorized_user_payload)
 
 
 def _gws_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"] = str(_ensure_gws_credentials_file())
+    env["GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"] = str(TOKEN_PATH)
+    env["GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"] = str(_ensure_gws_credentials_file())  # ki66
     return env
 
 
@@ -269,20 +259,11 @@ def get_credentials():
     _ensure_authenticated()
 
     from google.oauth2.credentials import Credentials
-    from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
 
     creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), _stored_token_scopes())
     if creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-        except RefreshError as exc:
-            print(f"Google OAuth refresh failed: {exc}", file=sys.stderr)
-            print("Re-run Google Workspace OAuth setup with a valid client secret.", file=sys.stderr)
-            print(f"  python {Path(__file__).parent / 'setup.py'} --client-secret /path/to/client_secret.json", file=sys.stderr)
-            print(f"  python {Path(__file__).parent / 'setup.py'} --auth-url", file=sys.stderr)
-            print(f"  python {Path(__file__).parent / 'setup.py'} --auth-code CODE_OR_REDIRECT_URL", file=sys.stderr)
-            sys.exit(1)
+        _google_api_ki66.refresh_or_exit(creds, Request(), Path(__file__).parent)
         TOKEN_PATH.write_text(
             json.dumps(
                 _normalize_authorized_user_payload(json.loads(creds.to_json())),
@@ -321,9 +302,7 @@ def gmail_search(args: argparse.Namespace) -> None:
                     "userId": "me",
                     "id": msg_meta["id"],
                     "format": "metadata",
-                    # ki66 2026-09-19: gws 0.3.4 drops array query params, so
-                    # metadataHeaders=[...] returned ZERO headers (empty from/subject/date).
-                    # Omit it: metadata format returns all headers; _headers_dict filters.
+                    # ki66: metadataHeaders omitted on purpose — see _google_api_ki66.py.
                 },
             )
             headers = _headers_dict(msg)
@@ -460,7 +439,7 @@ def gmail_reply(args):
                 "userId": "me",
                 "id": args.message_id,
                 "format": "metadata",
-                # ki66 2026-09-19: see gmail_search — array param dropped by gws 0.3.4.
+                # ki66: metadataHeaders omitted on purpose — see _google_api_ki66.py.
             },
         )
         headers = _headers_dict(original)

@@ -1,3 +1,5 @@
+import { resolveNativeGatewayWsUrl } from './websocket-url.ki66'
+
 export type GatewayAuthMode = 'oauth' | 'token' | (string & {})
 
 export interface GatewayWsConnection {
@@ -41,21 +43,7 @@ export async function resolveGatewayWsUrl(deps: ResolveGatewayWsUrlDeps, conn: G
   const profile = conn.profile ?? null
 
   if (conn.authMode === 'native') {
-    if (!mint) {
-      throw new Error('Native gateway requires a fresh private ticket')
-    }
-
-    const result = await mint(profile)
-
-    if (typeof result === 'string') {
-      return result
-    }
-
-    if (!result.ok) {
-      throw new Error(result.error || 'Could not refresh the native gateway WebSocket ticket.')
-    }
-
-    return result.wsUrl
+    return resolveNativeGatewayWsUrl(mint, profile)
   }
 
   if (conn.authMode === 'oauth') {

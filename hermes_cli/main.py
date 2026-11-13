@@ -2259,35 +2259,7 @@ def _update_preflight_handled(args) -> bool:
 
 
 from hermes_cli.update_receipt import update_receipt_scope
-
-
-def _delegate_update_to_external_coordinator() -> bool:
-    """Exec the external coordinator for a real ``hermes update`` command."""
-    if os.environ.get("HERMES_UPDATE_COORDINATOR_ACTIVE") == "1":
-        return False
-    try:
-        update_index = sys.argv.index("update")
-    except ValueError:
-        return False
-
-    passthrough = sys.argv[update_index + 1 :]
-    if any(flag in passthrough for flag in ("--plan", "--check")):
-        return False
-
-    hermes_home = Path(
-        os.environ.get("HERMES_HOME") or Path.home() / ".hermes"
-    ).expanduser()
-    coordinator = hermes_home / "bin" / "hermes-update-coordinator"
-    if not coordinator.is_file() or not os.access(coordinator, os.X_OK):
-        return False
-
-    command = [str(coordinator), "update", "--source", "hermes-cli", "--", *passthrough]
-    try:
-        os.execve(str(coordinator), command, os.environ.copy())
-    except OSError as exc:
-        print(f"✗ Failed to start the external Hermes update coordinator: {exc}")
-        raise SystemExit(1) from exc
-    return True
+from hermes_cli.update_ki66 import delegate_update_to_external_coordinator as _delegate_update_to_external_coordinator
 
 
 @update_receipt_scope()

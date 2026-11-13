@@ -1,5 +1,4 @@
 import { useAssistantRuntime } from '@assistant-ui/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +37,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api: vi.fn() } })
 })
 
-function mount(storedId = 'stored', withCron = false, source: null | string = null) {
+function mount(storedId = 'stored') {
   const $messages = atom(Array.from({ length: 120 }, (_, index) => message(10_000 + index)))
 
   const view = {
@@ -60,21 +59,12 @@ function mount(storedId = 'stored', withCron = false, source: null | string = nu
 
   const mutations = { onEdit: vi.fn(), onReload: vi.fn(), onCancel: vi.fn(), onThreadMessagesChange: vi.fn() }
 
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  queryClient.setQueryData(['cron-deliveries'], withCron
-    ? [{ ts: Date.now() / 1000, job_id: 'cron-test', job_name: 'Cron test', text: 'cron delivery' }]
-    : [])
-  // The source guard's lookup: a messaging source must keep the mirror off.
-  queryClient.setQueryData(['cron-mirror-session-source', storedId], source)
-
   const rendered = render(
-    <QueryClientProvider client={queryClient}>
-      <SessionViewProvider value={view}>
-        <ChatRuntimeBoundary busy={false} suppressMessages={false} {...mutations}>
-          <Observe />
-        </ChatRuntimeBoundary>
-      </SessionViewProvider>
-    </QueryClientProvider>
+    <SessionViewProvider value={view}>
+      <ChatRuntimeBoundary busy={false} suppressMessages={false} {...mutations}>
+        <Observe />
+      </ChatRuntimeBoundary>
+    </SessionViewProvider>
   )
 
   return {
@@ -91,24 +81,6 @@ function mount(storedId = 'stored', withCron = false, source: null | string = nu
 }
 
 describe('bounded direct history runtime', () => {
-  it('keeps cron deliveries out of a messaging session and its history', async () => {
-    vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
-    const mounted = mount('tg-session', true, 'telegram')
-    const hasCron = () => mounted.runtime.thread.getState().messages.some(message => message.id.startsWith('__cron__'))
-    expect(hasCron()).toBe(false)
-    await act(async () => { await mounted.window.revealRow(40, new AbortController().signal) })
-    expect(hasCron()).toBe(false)
-    expect(mounted.view.$messages.get().some(message => message.id.startsWith('__cron__'))).toBe(false)
-    act(() => { mounted.window.returnToLatest() })
-    expect(hasCron()).toBe(false)
-  })
-
-  it('still shows the cron mirror on the local primary thread', async () => {
-    vi.spyOn(window.hermesDesktop, 'api').mockResolvedValue(page(40))
-    const mounted = mount('stored', true, 'tui')
-    expect(mounted.runtime.thread.getState().messages.some(message => message.id.startsWith('__cron__'))).toBe(true)
-  })
-
   it('keeps navigation consumers stable while a live assistant reply advances', () => {
     const mounted = mount()
 

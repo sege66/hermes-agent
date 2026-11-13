@@ -4,6 +4,7 @@ import { atom } from 'nanostores'
 import { $gateway } from './gateway'
 import { refreshSessionGoal } from './goals'
 import { isSessionGone, isSessionGoneForBackgroundPolling, markSessionGone } from './runtime-gone'
+import { isRetiredRouteRead } from './session-control.ki66'
 import { ambientRequestFor } from './session-gone-latch'
 import { requestForOwnedSession } from './session-states'
 
@@ -750,31 +751,6 @@ function isMethodNotFound(error: unknown): boolean {
   return message.toLowerCase().includes('method not found') || message.toLowerCase().includes('method-not-found')
 }
 
-// The owner refuses a read whose route now serves another conversation (an idle reset or /new
-// rotated it) as `stale_generation`. Nothing on that retired route is controllable, so a read
-// keeps its last snapshot quietly instead of raising the "controls unavailable" banner.
-function isRetiredRouteRead(error: unknown): boolean {
-  const data = isRecord(error) ? error.data : undefined
-  const reason = isRecord(data) ? data.reason : undefined
-
-  if (typeof reason === 'string') {
-    return reason === 'stale_generation'
-  }
-
-  const message = error instanceof Error ? error.message : isRecord(error) && typeof error.message === 'string' ? error.message : ''
-
-  return message.trim() === 'stale_generation'
-}
-
-function finishRetiredRead(sessionId: string, token: number): void {
-  if (!isCurrent(sessionId, token)) {
-    return
-  }
-
-  const current = $sessionControlBySession.get()[sessionId] ?? emptyEntry()
-  publishEntry(sessionId, { ...current, error: null, loading: false })
-}
-
 /** Hydrates one session's structured controls; background refreshes never flash a loading state. */
 export async function refreshSessionControl(
   sessionId: string,
@@ -836,8 +812,12 @@ export async function refreshSessionControl(
       return $sessionControlBySession.get()[sessionId]
     }
 
+    // ki66: a retired route keeps its last snapshot quietly (session-control.ki66.ts).
     if (isRetiredRouteRead(error)) {
-      finishRetiredRead(sessionId, token)
+      if (isCurrent(sessionId, token)) {
+        const current = $sessionControlBySession.get()[sessionId] ?? emptyEntry()
+        publishEntry(sessionId, { ...current, error: null, loading: false })
+      }
 
       return $sessionControlBySession.get()[sessionId]
     }

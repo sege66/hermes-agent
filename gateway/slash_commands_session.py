@@ -20,12 +20,13 @@ from agent.turn_context import extract_api_content_sidecar
 from gateway.config import Platform
 from gateway.platforms.base import EphemeralReply
 from gateway.platforms.event import MessageEvent, MessageType
-from gateway.session import SessionSource, _notify_desktop_session_updated, build_session_key, is_shared_multi_user_session
+from gateway.session import SessionSource, build_session_key, is_shared_multi_user_session
 from gateway.session_transcript import TranscriptReadError
 from gateway.slash_commands_branch_thread import (
     BRANCH_THREAD_PLATFORMS, branch_dest_source, branch_thread_parent, format_thread_ref, parse_branch_args,
 )
 from gateway.slash_commands_status import history_unreadable
+from gateway.session import _notify_desktop_session_updated  # ki66: desktop follows /new
 
 logger = logging.getLogger("gateway.run")  # log-record parity with gateway/run.py
 

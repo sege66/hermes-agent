@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -78,24 +77,19 @@ describe('runtime older-page expansion', () => {
         return null
       }
 
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      queryClient.setQueryData(['cron-deliveries'], [])
-
       render(
-        <QueryClientProvider client={queryClient}>
-          <SessionViewProvider value={view}>
-            <ChatRuntimeBoundary
-              busy={false}
-              onCancel={() => {}}
-              onEdit={async () => {}}
-              onReload={async () => {}}
-              onThreadMessagesChange={() => {}}
-              suppressMessages={false}
-            >
-              <Observe />
-            </ChatRuntimeBoundary>
-          </SessionViewProvider>
-        </QueryClientProvider>
+        <SessionViewProvider value={view}>
+          <ChatRuntimeBoundary
+            busy={false}
+            onCancel={() => {}}
+            onEdit={async () => {}}
+            onReload={async () => {}}
+            onThreadMessagesChange={() => {}}
+            suppressMessages={false}
+          >
+            <Observe />
+          </ChatRuntimeBoundary>
+        </SessionViewProvider>
       )
       let pending: unknown
       act(() => {

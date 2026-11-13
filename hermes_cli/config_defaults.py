@@ -1788,9 +1788,7 @@ DEFAULT_CONFIG = {
         # platforms are configured. Failure -> last_status=blocked_config, ONE alert, no LLM call.
         # False = fail during the run instead.
         "preflight": True,
-        # When enabled, every active LLM cron job must persist both provider
-        # and model. Script-only no-agent jobs are exempt.
-        "require_explicit_provider_model": False,
+        "require_explicit_provider_model": False,  # ki66: see cron/jobs_ki66.py
         # Default model for cron jobs (WHAT model runs). Fire-time resolution: per-job pin >
         # cron.model > model.default (the main agent model). An unpinned job follows the main
         # model on every run; cron.model decouples the whole fleet from chat. "" = fall through.

@@ -1,8 +1,10 @@
 """`hermes update` must not drop local commits without leaving a named way back.
 
-The fork merges same-branch divergence when it shares an ancestor with upstream,
-preserving both histories and files. Orphan history still resets only after
-parking the old HEAD under ``refs/hermes-update-backups/`` and printing its name.
+When the checkout sits on the update's target branch and its history has
+diverged, the update resets hard to ``origin/<branch>``. Divergence there has
+two indistinguishable causes: an upstream force-push (nothing local is lost)
+and local commits on that branch (everything is). The update must park the old
+HEAD under ``refs/hermes-update-backups/`` first and tell the user the ref name.
 The installer update paths are covered in
 ``tests/scripts/install/test_install_diverged_rescue_ref.py``.
 """
@@ -60,7 +62,7 @@ def _assert_reset_kept_local_commit(checkout, local_sha, output):
     assert head == origin, "the reset itself must still happen"
     refs = [ref for ref, sha in _rescue_refs(checkout).items() if sha == local_sha]
     assert len(refs) == 1, f"the dropped commit needs exactly one rescue ref: {_rescue_refs(checkout)}"
-    assert refs[0].startswith("refs/hermes-update-backups/orphan-main-")
+    assert refs[0].startswith("refs/hermes-update-backups/diverged-main-")
     assert refs[0] in output, "the user must be told where the commits went"
     dropped = _git(checkout, "log", "--format=%H", f"origin/main..{refs[0]}").stdout.split()
     assert dropped == [local_sha]
@@ -87,23 +89,6 @@ def test_hermes_update_keeps_local_commit_behind_a_rescue_ref(
     assert "1 unique commit(s) ahead of origin/main" in out
     assert "merging to preserve them" in out
     assert "resetting" not in out
-
-
-def test_orphan_history_resets_with_named_rescue_ref(diverged_checkout, monkeypatch, capsys):
-    checkout, _ = diverged_checkout
-    _git(checkout, "checkout", "--orphan", "orphan")
-    _git(checkout, "branch", "-D", "main")
-    _git(checkout, "branch", "-m", "main")
-    local_sha = _commit(checkout, "orphan-only.txt", "orphan\n")
-    monkeypatch.setattr(update_cmd._m(), "PROJECT_ROOT", checkout)
-
-    update_cmd._pull_updates(
-        GIT, "main", None, prompt_for_restore=False, gw_input_fn=None,
-        discard_local_changes=False, keep_stash=False)
-
-    _assert_reset_kept_local_commit(checkout, local_sha, capsys.readouterr().out)
-    assert _git(checkout, "show", f"{local_sha}:orphan-only.txt").stdout == "orphan\n"
-    assert (checkout / "upstream-only.txt").read_text(encoding="utf-8") == "upstream\n"
 
 
 @pytest.fixture()

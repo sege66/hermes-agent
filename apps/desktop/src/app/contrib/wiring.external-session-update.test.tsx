@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { externalSessionReplacement, refreshExternalSessionUpdate } from './wiring'
+import { externalSessionReplacement, refreshExternalSessionUpdate } from './wiring.ki66'
 
 describe('externalSessionReplacement', () => {
   it('follows the replacement only when the selected stored session matches the previous id', () => {

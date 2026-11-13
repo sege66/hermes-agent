@@ -10,15 +10,7 @@ export function reasoningPart(text: string, timestamp?: number): ChatMessagePart
   return { type: 'reasoning', text, ...(timestamp !== undefined ? { timestamp } : {}) }
 }
 
-export function prependMarkerLine(parts: ChatMessagePart[], label: string): ChatMessagePart[] {
-  const [first, ...rest] = parts
-
-  if (first?.type === 'text') {
-    return [textPart(`${label}\n\n${first.text}`), ...rest]
-  }
-
-  return [textPart(label), ...parts]
-}
+export { prependMarkerLine } from './parts.ki66'
 
 /** Extract display text from a provider reasoning-details envelope. */
 export function reasoningTextFromDetails(details: unknown): string {
