@@ -46,7 +46,7 @@ def _resolve_target():
     if _target is not None:
         return _target
     try:
-        from cron.scheduler import _get_home_target_chat_id, _get_home_target_thread_id
+        from cron.scheduler_delivery import _get_home_target_chat_id, _get_home_target_thread_id
         from gateway.config import Platform, load_gateway_config
 
         config = load_gateway_config()
@@ -87,7 +87,7 @@ def _send_all(texts, media_files=None) -> bool:
     if not target:
         return False
     platform, pconfig, chat_id, thread_id = target
-    from cron.scheduler import _confirm_adapter_delivery
+    from cron.scheduler_delivery import _confirm_adapter_delivery
     from tools.send_message_tool import _send_to_platform
 
     remaining = list(media_files or [])

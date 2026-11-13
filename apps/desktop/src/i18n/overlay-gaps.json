@@ -56,8 +56,6 @@
   "assistant.thread.errorCodes.SESSION_OWNER_BUSY.title": ["ar","de","es","fr","ja","ru","zh","zh-hant"],
   "assistant.thread.errorCodes.SESSION_OWNER_UNCONFIRMED.body": ["ar","de","es","fr","ja","ru","zh","zh-hant"],
   "assistant.thread.errorCodes.SESSION_OWNER_UNCONFIRMED.title": ["ar","de","es","fr","ja","ru","zh","zh-hant"],
-  "assistant.thread.errorCodes.SESSION_SUPERSEDED.body": ["ar","ja","ru","zh","zh-hant"],
-  "assistant.thread.errorCodes.SESSION_SUPERSEDED.title": ["ar","ja","ru","zh","zh-hant"],
   "assistant.thread.errorCodes.auth.body": ["ru"],
   "assistant.thread.errorCodes.auth.title": ["ru"],
   "assistant.thread.errorCodes.auth_permanent.body": ["ru"],

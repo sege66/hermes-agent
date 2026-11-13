@@ -140,10 +140,6 @@ export const enErrorCodes: ThreadCopy['errorCodes'] = {
     title: 'Chat open somewhere else',
     body: 'This chat is open in another Hermes window or terminal. Start a new chat here, or close it there first.'
   },
-  SESSION_SUPERSEDED: {
-    title: 'This chat has moved on',
-    body: 'This chat was reset (by /new or after a quiet spell), so this older conversation is read-only. Open the newest chat in the sidebar to keep going, or start a new chat here.'
-  },
   disk_full: {
     title: 'Your disk is full',
     body: "Hermes couldn't save this conversation. Free up space, then retry."

@@ -69,9 +69,9 @@ def _resolve_channel(name: str, repository: str):
     """The only adapter to the validated requested/terminal records and manifest.
 
     ChannelReader owns HTTPS, authority and digests. The source adapter below
-    admits its retirement constraints before any checkout operation. An unpublished
-    official stable record falls back to published GitHub releases; an unpublished
-    main record resolves to the main branch.
+    admits its retirement constraints before any checkout operation. No legacy
+    GitHub fallback is allowed when a record is unavailable; the one exception
+    is an unpublished ``main`` record, which resolves to the main branch.
     """
     from hermes_cli.release_channels import ChannelReader
 

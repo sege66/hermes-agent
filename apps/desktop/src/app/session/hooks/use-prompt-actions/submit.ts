@@ -67,7 +67,6 @@ import {
   isForwardedReceipt,
   isProviderSetupError,
   isSessionBusyError,
-  isSessionSupersededError,
   isTargetSessionBusy,
   isVoiceStoppedReceipt,
   ownershipErrorSurface,
@@ -1380,7 +1379,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
 
         const message = inlineErrorMessage(err, copy.promptFailed)
         const occurredAt = Date.now() / 1000
-        const superseded = isSessionSupersededError(err)
 
         updateSessionState(
           sessionId,
@@ -1394,7 +1392,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
                 parts: [],
                 error: message || copy.promptFailed,
                 ...ownershipErrorSurface(err),
-                ...(isSessionSupersededError(err) && { errorSurface: { layer: 'gateway', code: 'SESSION_SUPERSEDED', retryable: false } }),
                 branchGroupId: state.pendingBranchGroup ?? undefined,
                 completedAt: occurredAt,
                 timestamp: occurredAt
@@ -1416,8 +1413,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
           return false
         }
 
-        // The superseded card already says what happened and where to go; a toast would repeat the raw code.
-        if (targetIsCurrentView() && !superseded) {
+        if (targetIsCurrentView()) {
           notifyError(err, copy.promptFailed)
         }
 

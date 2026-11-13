@@ -325,15 +325,6 @@ export function isSessionNotOwnedError(error: unknown): boolean {
   return reason === 'SESSION_NOT_OWNED' || /already has a live owner/i.test(error instanceof Error ? error.message : '')
 }
 
-// prompt.submit refused because this messaging chat moved on to a newer
-// conversation (/new or an idle reset): the old row is read-only
-// (`session_superseded`). Retry reproduces it; the newer chat is in the sidebar.
-export function isSessionSupersededError(error: unknown): boolean {
-  const reason = error instanceof JsonRpcGatewayError ? (error.data as { reason?: unknown } | undefined)?.reason : null
-
-  return reason === 'session_superseded' || (error instanceof Error && error.message.trim() === 'session_superseded')
-}
-
 // prompt.submit refused because the gateway that owns this chat is mid-turn and could not queue
 // the send (4090 / SESSION_OWNER_BUSY, #140385). Transient: the turn ends on its own.
 export function isSessionOwnerBusyError(error: unknown): boolean {

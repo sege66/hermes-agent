@@ -16,7 +16,6 @@ act/
 .vscode/
 .env
 .op.env
-.env.*
 .env.local
 .env.development.local
 .env.test.local
@@ -99,10 +98,6 @@ environments/benchmarks/evals/
 
 # Web UI build output
 hermes_cli/web_dist/
-# Frontend build scratch dirs (scripts/build/frontend-common.mjs withProduct staging)
-hermes_cli/.web_dist-build-*/
-ui-tui/.dist-build-*/
-apps/desktop/.dist-build-*/
 # Cross-process web UI build lock (flock target, always empty)
 .web_ui_build.lock
 apps/desktop/build/
@@ -335,7 +330,6 @@ infografico/
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
-.gitnexus
 
 # Bundle/build scratch roots (scripts/bundles/, scripts/build/frontend-common.mjs)
 .build/
@@ -345,11 +339,3 @@ infografico/
 /pm/.lock.json.lock
 
 apps/desktop/.dist-build*
-
-# Local agent-workspace overlays (GitNexus index, Claude config) — machine-local, never code
-.gitnexus
-.claude/
-CLAUDE.md
-
-# External nested research/worktree checkouts
-/tinker-atropos/

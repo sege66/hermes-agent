@@ -751,26 +751,8 @@ def _action_create(a: dict[str, Any]) -> str:
     return _dumps(_with_guidance(_result, job, deliver))
 
 
-def _format_job_summary(job: dict[str, Any]) -> dict[str, Any]:
-    """Compact job shape for agent-facing list output (include_details=False)."""
-    job_id = str(job.get("id") or "unknown")
-    name = str(job.get("name") or job_id or "cron job")
-    return {
-        "job_id": job_id,
-        "name": name,
-        "schedule": job.get("schedule_display") or "?",
-        "repeat": _repeat_display(job),
-        "deliver": job.get("deliver", "local"),
-        "next_run_at": job.get("next_run_at"),
-        "last_status": job.get("last_status"),
-        "enabled": job.get("enabled", True),
-        "state": job.get("state", "scheduled" if job.get("enabled", True) else "paused"),
-    }
-
-
 def _action_list(a: dict[str, Any]) -> str:
-    formatter = _format_job if a.get("include_details", True) else _format_job_summary
-    jobs = [formatter(job) for job in list_jobs(include_disabled=a["include_disabled"])]
+    jobs = [_format_job(job) for job in list_jobs(include_disabled=a["include_disabled"])]
     _result = {"success": True, "count": len(jobs), "jobs": jobs}
     # Same inert-job class as create; an empty list has nothing inert.
     if jobs:
@@ -1093,7 +1075,6 @@ def cronjob(
     paused_reason: Optional[str] = None,
     pinned: Optional[bool] = None,
     interpreter: Optional[str] = None,
-    include_details: bool = True,
     timezone: Optional[str] = None,
     grace_minutes: Optional[int | str] = None) -> str:
     """Unified cron job management tool."""

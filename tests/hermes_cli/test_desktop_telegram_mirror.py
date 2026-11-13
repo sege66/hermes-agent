@@ -87,7 +87,7 @@ def test_disabled_when_not_desktop_or_toggled_off(monkeypatch):
 
 
 def test_target_resolution_retries_after_temporary_unavailability(monkeypatch):
-    from cron import scheduler
+    from cron import scheduler_delivery as scheduler
     from gateway.config import Platform
     import gateway.config
 

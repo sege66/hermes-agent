@@ -49,7 +49,6 @@ export const ERROR_CODE_KEYS = [
   'empty_response',
   'loop_error',
   'SESSION_NOT_OWNED',
-  'SESSION_SUPERSEDED',
   // The gateway that owns the chat is mid-turn and could not queue this send: transient.
   'SESSION_OWNER_BUSY',
   // The chat is a scheduled job's session: it only runs that job, so a typed message never runs there.
@@ -396,7 +395,6 @@ const CODE_ACTIONS: Partial<Record<ErrorCodeKey, ErrorCardActions>> = {
   payload_too_large: { primary: 'compress', secondary: 'start_new_session' },
   provider_policy_blocked: { primary: 'open_provider_settings', secondary: 'choose_model' },
   SESSION_NOT_OWNED: { primary: 'start_new_session' },
-  SESSION_SUPERSEDED: { primary: 'start_new_session' },
   ssl_cert_verification: { primary: 'open_setup_guide_tls' },
   truncated: { primary: 'continue' },
   upstream_blocked: { primary: 'switch_provider' },
