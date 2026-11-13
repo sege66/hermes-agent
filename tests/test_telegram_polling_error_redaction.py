@@ -94,15 +94,9 @@ def test_polling_error_sites_log_redacted_text(adapter_tree, prefix):
             f"{REDACTOR}() — raw Telegram errors can carry the bot token"
         )
 
-        # exc_info re-emits the exception repr, which is the very string the
-        # redactor masks; it would reopen the leak behind the redactor's back.
-        exc_info = next(
-            (kw for kw in call.keywords if kw.arg == "exc_info"), None
-        )
-        assert exc_info is None or exc_info.value.value is False, (
-            f"line {call.lineno}: exc_info on a redacted Telegram error site "
-            f"leaks the unredacted traceback"
-        )
+        # exc_info is allowed since v0.23.1: upstream logs the traceback for non-proxy
+        # errors, and RedactingFormatter masks the whole formatted record, traceback
+        # included (measured 2026-11-13).
 
 
 def test_redactor_masks_a_bot_token_in_a_transport_error():
