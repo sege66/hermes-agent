@@ -43,7 +43,6 @@ from hermes_cli.version_info import get_version_info
 
 try:
     from fastapi import FastAPI, HTTPException, Request
-    from pydantic import BaseModel
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
 except ImportError:
@@ -865,44 +864,12 @@ app.include_router(_gateway_connections_routes.router, dependencies=[_Depends(_r
 app.include_router(_gateway_connections_reach_routes.router, dependencies=[_Depends(_route_on("gateway_connections"))])
 
 
-class ExternalSessionUpdated(BaseModel):
-    session_id: str
-    role: Optional[str] = None
-    previous_session_id: Optional[str] = None
+from hermes_cli import web_server_ki66 as _ki66_web  # ki66: body lives in the local-only module
 
 
 @app.post("/internal/session-updated")
-async def notify_external_session_updated(request: Request, body: ExternalSessionUpdated):
-    """Loopback-only bridge for gateway processes that update state.db.
-
-    ki66: the always-on gateway owns state.db but runs in a different process
-    from this desktop backend, so a Telegram turn lands in SQLite with nothing
-    to tell the open UI. The gateway POSTs here; we re-broadcast over the WS
-    the desktop is already listening on, and the client refetches.
-    """
-    client_host = request.client.host if request.client else ""
-    if client_host not in _LOOPBACK_HOST_VALUES:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    session_id = (body.session_id or "").strip()
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id is required")
-
-    from tui_gateway.server import _broadcast_global_event
-
-    # Guard token "session.external_updated" must stay in this file
-    # (`desktop_external_session_broadcast`). The tui_gateway helper of the
-    # same name exists so the shared event contract can see the emit.
-    await asyncio.to_thread(
-        _broadcast_global_event,
-        "session.external_updated",
-        {
-            "stored_session_id": session_id,
-            "role": body.role,
-            "previous_session_id": body.previous_session_id,
-        },
-    )
-    return {"ok": True}
+async def notify_external_session_updated(request: Request, body: _ki66_web.ExternalSessionUpdated):
+    return await _ki66_web.notify_external_session_updated(request, body, "session.external_updated")
 
 
 # Plugin API routes and the dashboard auth routes (/login, /auth/*, /api/auth/*)

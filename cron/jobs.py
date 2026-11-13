@@ -119,32 +119,12 @@ _JOBS_LOCK_TIMEOUT_SECONDS = 30.0
 OUTPUT_DIR = CRON_DIR / "output"
 ONESHOT_GRACE_SECONDS = 120
 
-# Append-only log of what cron jobs actually delivered to a chat (Telegram etc.).
-# Powers the desktop chat's read-only cron mirror — script jobs deliver stdout
-# without creating an agent session, so a session-derived feed misses them; this
-# captures every real delivery uniformly. Bounded; single gateway process writes.
-DELIVERIES_FILE = CRON_DIR / "deliveries.jsonl"
-MAX_DELIVERIES = 200
-_deliveries_lock = threading.Lock()
-# Some no_agent scripts colorize stdout; strip ANSI escapes so the mirror reads
-# clean (terminal color codes would otherwise render as literal garbage).
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-
 
 @dataclass(frozen=True)
 class _CronStorePaths:
     cron_dir: Path
     jobs_file: Path
     output_dir: Path
-    # ki66: chat-delivery log beside jobs.json. Optional so upstream 3-field
-    # constructors/tests keep working; derived from cron_dir when omitted.
-    deliveries_file: Optional[Path] = None
-
-    def __post_init__(self) -> None:
-        if self.deliveries_file is None:
-            object.__setattr__(
-                self, "deliveries_file", Path(self.cron_dir) / "deliveries.jsonl"
-            )
 
     @classmethod
     def for_dir(cls, cron_dir: Path) -> "_CronStorePaths":
@@ -1826,41 +1806,6 @@ def _next_run_or_reject_past_oneshot(
     return next_run_at
 
 
-def _strict_cron_model_pinning_enabled() -> bool:
-    """Return whether active LLM cron jobs require explicit provider/model."""
-    from hermes_cli.config import load_config_readonly
-
-    config = load_config_readonly()
-    cron_config = config.get("cron") or {}
-    return (
-        isinstance(cron_config, dict)
-        and cron_config.get("require_explicit_provider_model") is True
-    )
-
-
-def _validate_explicit_cron_inference(
-    *,
-    provider: Any,
-    model: Any,
-    no_agent: Any,
-) -> None:
-    """Fail closed when strict policy would persist an unpinned LLM job."""
-    if bool(no_agent) or not _strict_cron_model_pinning_enabled():
-        return
-
-    missing = []
-    if _normalize_job_optional_text(provider) is None:
-        missing.append("provider")
-    if _normalize_job_optional_text(model) is None:
-        missing.append("model")
-    if missing:
-        raise ValueError(
-            "Active LLM cron jobs require explicit provider and model when "
-            "cron.require_explicit_provider_model=true; missing: "
-            + ", ".join(missing)
-        )
-
-
 def create_job(
     prompt: Optional[str],
     schedule: str,
@@ -1928,11 +1873,7 @@ def create_job(
     normalized_reasoning_effort = _normalize_reasoning_effort(reasoning_effort)
 
     _validate_job_mode_invariants(f["monitor_script"], f["monitor_url"], f["no_agent"], f["script"])
-    _validate_explicit_cron_inference(
-        provider=f["provider"],
-        model=f["model"],
-        no_agent=f["no_agent"],
-    )
+    _ki66.validate_explicit_cron_inference(provider=f["provider"], model=f["model"], no_agent=f["no_agent"])
     validate_schedule_knobs(parsed_schedule, f["timezone"], f["grace_minutes"])
     prompt_text = _coerce_job_text(prompt).strip()
     if not prompt_text and not f["script"] and not normalized_skills:
@@ -2198,22 +2139,7 @@ def update_job(job_id: str, updates: dict[str, Any]) -> Optional[dict[str, Any]]
                 _normalize_job_optional_text(updated.get("script")))
         if any(k in updates for k in _PAYLOAD_FIELDS) and job_payload_is_empty(updated):
             raise ValueError(EMPTY_PAYLOAD_ERROR)
-        # ki66: fail closed when cron.require_explicit_provider_model=true.
-        # Emergency pause is the one update that must still succeed on an
-        # unpinned LLM job (pause_job only sends enabled/state/paused_*).
-        emergency_pause = (
-            not bool(updated.get("enabled", True))
-            and updated.get("state") == "paused"
-            and set(updates).issubset(
-                {"enabled", "state", "paused_at", "paused_reason"}
-            )
-        )
-        if not emergency_pause:
-            _validate_explicit_cron_inference(
-                provider=updated.get("provider"),
-                model=updated.get("model"),
-                no_agent=updated.get("no_agent"),
-            )
+        _ki66.validate_updated_job_inference(updated, updates)  # ki66: strict model pinning
         if {"timezone", "grace_minutes"}.intersection(updates):
             validate_schedule_knobs(
                 updated.get("schedule") or {}, updated.get("timezone"),
@@ -2921,8 +2847,7 @@ def _sweep_completed_oneshots(
             schedule = rj.get("schedule")
             if (schedule.get("kind") if isinstance(schedule, dict) else None) != "once":
                 continue
-            # Parked wake-gate pairs are completed once-jobs between wakes.
-            # A quiet week must not delete the record the gate re-arms.
+            # ki66: parked wake-gate pairs are completed once-jobs between wakes; keep them.
             if rj.get("retain_completed") is True:
                 continue
             last_run = rj.get("last_run_at")
@@ -3444,78 +3369,20 @@ def save_job_output(job_id: str, output: str):
     return output_file
 
 
-def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
-    """Append one delivered cron message to the deliveries log (best-effort).
+# ki66: local-only additions (cron delivery log, strict model pinning) live in
+# cron/jobs_ki66.py; imported here, late, so this file carries a single hook block.
+from cron import jobs_ki66 as _ki66  # noqa: E402
 
-    Called from the delivery path once a real (non-local) target is resolved, so
-    the log mirrors what landed in the chat. Read-modify-write under a lock keeps
-    it bounded to the newest ``MAX_DELIVERIES``; deliveries are infrequent so the
-    rewrite cost is negligible. Never raises — a logging failure must not break
-    delivery.
-    """
-    try:
-        text = _ANSI_RE.sub("", text or "").strip()
-        if not text:
-            return
-        entry = {
-            "ts": _hermes_now().timestamp(),
-            "job_id": job_id,
-            "job_name": job_name or job_id,
-            "text": text,
-        }
-        with _deliveries_lock:
-            ensure_dirs()
-            existing = read_cron_deliveries(MAX_DELIVERIES - 1, _locked=True)
-            # read_cron_deliveries returns newest-first; persist oldest-first.
-            lines = [json.dumps(e, ensure_ascii=False) for e in reversed(existing)]
-            lines.append(json.dumps(entry, ensure_ascii=False))
-            store = _current_cron_store()
-            fd, tmp_path = mkstemp_beside(store.deliveries_file, suffix=".tmp", prefix=".deliveries_")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write("\n".join(lines) + "\n")
-                    f.flush()
-                    os.fsync(f.fileno())
-                atomic_replace(tmp_path, store.deliveries_file)
-                _secure_file(store.deliveries_file)
-            except BaseException:
-                with contextlib.suppress(OSError):
-                    os.unlink(tmp_path)
-                raise
-    except Exception as exc:  # never break delivery over a logging miss
-        logger.warning("record_cron_delivery failed for %s: %s", job_id, exc)
+
+def record_cron_delivery(job_id: str, job_name: str, text: str) -> None:
+    return _ki66.record_cron_delivery(job_id, job_name, text)
 
 
 def read_cron_deliveries(limit: int = 50, _locked: bool = False) -> List[Dict[str, Any]]:
-    """Return the most recent cron deliveries, newest first (best-effort)."""
-    def _read() -> List[Dict[str, Any]]:
-        deliveries_file = _current_cron_store().deliveries_file
-        if not deliveries_file.exists():
-            return []
-        out: List[Dict[str, Any]] = []
-        with open(deliveries_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                with contextlib.suppress(ValueError):
-                    out.append(json.loads(line))
-        out.reverse()  # newest first
-        return out[: max(0, limit)]
-
-    try:
-        if _locked:
-            return _read()
-        with _deliveries_lock:
-            return _read()
-    except Exception as exc:
-        logger.warning("read_cron_deliveries failed: %s", exc)
-        return []
+    return _ki66.read_cron_deliveries(limit, _locked=_locked)
 
 
-# =============================================================================
-# Skill reference rewriting (curator integration)
-# =============================================================================
+# --- Skill reference rewriting (curator integration) ---
 
 def _canonical_skill_ref(raw: Any) -> str:
     """Reduce a job skill reference (possibly an absolute path) to the bare name the curator matches

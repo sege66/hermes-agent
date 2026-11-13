@@ -1498,7 +1498,8 @@ def _seed_live_delivery_sessions(t: _TargetDelivery, delivered_message_id) -> No
 
 def _deliver_via_live_adapter(
     t: _TargetDelivery, cleaned_text: str, media_files: list, *, target_errors: list,
-    delivery_errors: list, unverified_targets: list, confirmed_targets: Optional[list] = None,
+    delivery_errors: list, unverified_targets: list,
+    confirmed_targets: Optional[list] = None,
 ) -> bool:
     """Deliver one target via the live gateway adapter; True once delivered. ``target_errors`` =
     this lane's soft failures (surfaced only if standalone also fails); ``delivery_errors`` =
@@ -1667,15 +1668,15 @@ def _queue_for_live_reconnect(t: _TargetDelivery, content: str, media_files: lis
 
 def _deliver_standalone(
     t: _TargetDelivery, content: str, media_files: list, target_errors: list, delivery_errors: list,
-) -> bool:
-    """Standalone fallback for a target the live lane did not deliver. True if confirmed."""
+) -> Optional[bool]:  # ki66: True once the send is confirmed (bare returns stay falsy)
+    """Standalone fallback for a target the live lane did not deliver."""
     job = t.job
     if t.is_relay:
         # Relay owns the destination and credential; a native retry could duplicate — fail closed.
         if not target_errors:
             target_errors.append(f"relay delivery to {t.where} failed")
         delivery_errors.extend(target_errors)
-        return False
+        return
     result, err = _standalone_send(t, content, media_files)
     if err is None and not _confirm_adapter_delivery(result):
         if isinstance(result, dict):
@@ -1690,7 +1691,7 @@ def _deliver_standalone(
         # A satellite profile's worker has no platform token, so standalone cannot stand in for a
         # live adapter that is only waiting to reconnect: keep the payload for that adapter.
         _queue_for_live_reconnect(t, content, media_files, delivery_errors)
-        return False
+        return
     # Standalone senders report per-file attachment failures in ``warnings`` while returning
     # success; surface them so a vanished attachment doesn't mark the run ok.
     for _w in (result.get("warnings") if isinstance(result, dict) else None) or []:
@@ -1987,7 +1988,8 @@ def _deliver_result(
         delivered = t.live_adapter_ready and _deliver_via_live_adapter(
             t, cleaned_delivery_content, media_files,
             target_errors=target_errors, delivery_errors=delivery_errors,
-            unverified_targets=unverified_targets, confirmed_targets=confirmed_targets,
+            unverified_targets=unverified_targets,
+            confirmed_targets=confirmed_targets,
         )
         if delivered:
             if confirmed_targets:

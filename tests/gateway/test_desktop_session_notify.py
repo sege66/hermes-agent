@@ -16,7 +16,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-import gateway.session as gs
+import gateway.session_ki66 as gs  # bridge logic lives here; session.py only hooks it
+from gateway.session import SessionStore
 
 
 class TestExternalSourceGate:
@@ -182,7 +183,7 @@ class TestChokePointWiring:
     """append_to_transcript is the single hook site — verify both branches."""
 
     def _store(self, source):
-        store = object.__new__(gs.SessionStore)
+        store = object.__new__(SessionStore)
 
         class _DB:
             def get_session(self, sid):
@@ -214,7 +215,7 @@ class TestChokePointWiring:
         monkeypatch.setattr(
             gs, "_notify_desktop_session_updated", lambda *a, **k: seen.append(a)
         )
-        store = object.__new__(gs.SessionStore)
+        store = object.__new__(SessionStore)
         store._db = None
         store.append_to_transcript("s1", {"role": "user"}, skip_db=True)
         assert seen == []
@@ -224,7 +225,7 @@ class TestChokePointWiring:
             def get_session(self, sid):
                 raise RuntimeError("db down")
 
-        store = object.__new__(gs.SessionStore)
+        store = object.__new__(SessionStore)
         store._db = _DB()
         # Must not raise — a broken DB lookup cannot break a transcript write.
         store.append_to_transcript("s1", {"role": "user"}, skip_db=True)
@@ -244,7 +245,7 @@ class TestRotationNotify:
         from gateway.session import SessionSource
 
         config = GatewayConfig()
-        store = gs.SessionStore(sessions_dir=tmp_path, config=config)
+        store = SessionStore(sessions_dir=tmp_path, config=config)
         source = SessionSource(platform=Platform.TELEGRAM, chat_id="123", user_id="u1")
         return store, source, datetime, timedelta
 

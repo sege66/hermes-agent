@@ -6,9 +6,7 @@ import hashlib
 import logging
 import os
 import json
-import re
 import threading
-import urllib.request
 from pathlib import Path
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, fields
@@ -27,142 +25,8 @@ from gateway.session_transcript import SessionTranscriptMixin
 from hermes_state_keys import profile_from_session_key_namespace
 
 logger = logging.getLogger(__name__)
+from gateway.session_ki66 import _notify_desktop_session_updated, _notify_reset_rotation, _notify_route_rotation  # ki66 desktop live-update bridge  # noqa: E402,F401
 
-# ── Desktop live-update bridge (ki66 local feature) ──────────────────────
-# The always-on gateway owns state.db, but the desktop app renders from its own
-# process. Without a nudge, a turn that arrives on Telegram lands in the DB and
-# the open desktop window shows nothing until the user reloads. POST to the
-# desktop backend's loopback ``/internal/session-updated``, which re-broadcasts
-# ``session.external_updated`` over its WS so the UI refetches.
-#
-# ponytail: fire-and-forget on a daemon thread with a ~120ms timeout — a
-# missed refresh nudge is cosmetic, a blocked transcript write is not.
-_DESKTOP_SESSION_EVENT_PORTS = (*range(9120, 9131), 9119)
-_DESKTOP_SESSION_EVENT_TIMEOUT_S = 0.12
-_DESKTOP_READY_RE = re.compile(rb"HERMES_(?:DASHBOARD|BACKEND)_READY port=(\d+)")
-_LOCAL_SOURCES = frozenset({"", "cli", "tui", "local", "desktop"})
-
-
-def _is_external_session_source(source: Any) -> bool:
-    """True when a session originated off-box (telegram, discord, …).
-
-    Desktop- and CLI-originated turns already paint in their own process; only
-    external sources need the cross-process refresh nudge.
-    """
-    return str(source or "").strip().lower() not in _LOCAL_SOURCES
-
-
-def _desktop_ready_ports_from_log() -> List[int]:
-    """Ports the desktop backend most recently announced, newest first."""
-    log_path = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / "logs" / "desktop.log"
-    try:
-        with log_path.open("rb") as fh:
-            fh.seek(0, os.SEEK_END)
-            size = fh.tell()
-            fh.seek(max(0, size - 65536), os.SEEK_SET)
-            data = fh.read()
-    except Exception:
-        return []
-
-    ports: List[int] = []
-    for match in _DESKTOP_READY_RE.finditer(data):
-        try:
-            ports.append(int(match.group(1)))
-        except ValueError:
-            continue
-    return list(reversed(ports[-3:]))
-
-
-def _desktop_session_event_targets() -> "tuple[List[str], set]":
-    """Ordered candidate URLs plus the subset that are announced live backends.
-
-    ki66: the desktop runs one ``hermes serve`` backend per profile (the primary
-    plus every extra profile, e.g. ``atlas``) and keeps their sockets open
-    concurrently, but the renderer's ``session.external_updated`` refresh
-    handler only listens on the *active* profile's socket. Every port the
-    desktop announced is therefore a live target that must be nudged; the
-    static fallback range is only a guess for when the log yielded nothing.
-    """
-    configured = (os.environ.get("HERMES_DESKTOP_SESSION_EVENT_URL") or "").strip()
-    if configured:
-        return [configured], {configured}
-
-    announced: List[str] = []
-    for port in _desktop_ready_ports_from_log():
-        url = f"http://127.0.0.1:{port}/internal/session-updated"
-        if url not in announced:
-            announced.append(url)
-
-    urls = list(announced)
-    for port in _DESKTOP_SESSION_EVENT_PORTS:
-        url = f"http://127.0.0.1:{port}/internal/session-updated"
-        if url not in urls:
-            urls.append(url)
-
-    return urls, set(announced)
-
-
-def _desktop_session_event_urls() -> List[str]:
-    return _desktop_session_event_targets()[0]
-
-
-def _notify_desktop_session_updated(
-    session_id: str,
-    role: Any = None,
-    previous_session_id: Optional[str] = None,
-) -> None:
-    if not session_id:
-        return
-
-    payload = json.dumps(
-        {
-            "session_id": session_id,
-            "role": role,
-            "previous_session_id": previous_session_id,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
-
-    def _send() -> None:
-        urls, announced = _desktop_session_event_targets()
-        delivered = False
-        for url in urls:
-            # Announced ports are all live per-profile backends: notify each
-            # of them (a stale one just refuses the connection, cheaply). The
-            # static fallback range is walked only until the first success,
-            # and not at all once an announced backend already took it.
-            if delivered and url not in announced:
-                return
-            request = urllib.request.Request(
-                url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            try:
-                with urllib.request.urlopen(
-                    request,
-                    timeout=_DESKTOP_SESSION_EVENT_TIMEOUT_S,
-                ):
-                    delivered = True
-            except Exception:
-                continue
-
-    threading.Thread(
-        target=_send,
-        name="hermes-desktop-session-notify",
-        daemon=True,
-    ).start()
-
-
-def _notify_desktop_rotation(platform_value: Any, new_session_id: str, previous_session_id: str) -> None:
-    """Tell the desktop that an external chat rotated to a fresh session."""
-    try:
-        if not _is_external_session_source(platform_value):
-            return
-        _notify_desktop_session_updated(new_session_id, previous_session_id=previous_session_id)
-    except Exception as exc:
-        logger.debug("Desktop rotation notification failed: %s", exc)
 
 # -- PII redaction helpers --------------------------------------------------------------------
 
@@ -1150,12 +1014,7 @@ class SessionStore(
                 self._row_settled(create_kwargs["session_id"])
         if observed is None or decision.entry.session_id != observed.session_id:
             self._announce_route(session_key, decision.entry)
-        if decision.prev_session_id and create_kwargs:
-            _notify_desktop_rotation(
-                getattr(getattr(source, "platform", None), "value", None),
-                create_kwargs.get("session_id") or decision.entry.session_id,
-                decision.prev_session_id,
-            )
+        _notify_route_rotation(source, decision, create_kwargs)  # ki66
         return decision.entry
 
     def _apply_route_checks(
@@ -1324,13 +1183,7 @@ class SessionStore(
             entry = self._entry_locked(session_key)
             return dict(entry.model_override) if entry and entry.model_override else None
 
-    def reset_session(
-        self,
-        session_key: str,
-        display_name: Optional[str] = None,
-        *,
-        notify_desktop: bool = True,
-    ) -> Optional[SessionEntry]:
+    def reset_session(self, session_key: str, display_name: Optional[str] = None, *, notify_desktop: bool = True) -> Optional[SessionEntry]:
         """Force reset a session, creating a new session ID."""
         with self._lock:
             old_entry = self._entry_locked(session_key)
@@ -1360,12 +1213,7 @@ class SessionStore(
         finally:
             self._row_settled(session_id)
         self._announce_route(session_key, new_entry)
-        if notify_desktop and new_entry is not None and old_entry.session_id:
-            _notify_desktop_rotation(
-                getattr(old_entry.platform, "value", None),
-                new_entry.session_id,
-                old_entry.session_id,
-            )
+        _notify_reset_rotation(notify_desktop, old_entry, new_entry)  # ki66
         return new_entry
 
     def _replace_route_locked(self, session_key, old_entry, session_id, now, **fields) -> SessionEntry:

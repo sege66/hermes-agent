@@ -11,7 +11,7 @@ class TestExplicitInferencePolicy:
         self, tmp_cron_dir, monkeypatch
     ):
         monkeypatch.setattr(
-            "cron.jobs._strict_cron_model_pinning_enabled", lambda: True
+            "cron.jobs_ki66._strict_cron_model_pinning_enabled", lambda: True
         )
 
         with pytest.raises(ValueError, match="missing: provider, model"):
