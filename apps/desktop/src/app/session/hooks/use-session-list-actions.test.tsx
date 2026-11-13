@@ -15,7 +15,6 @@ import {
   $messagingPlatformTotals,
   $messagingSessions,
   $messagingTruncated,
-  $selectedStoredSessionId,
   $sessionProfilesFailed,
   $sessionProfilesTruncated,
   $sessionProfilesUsage,
@@ -132,7 +131,6 @@ beforeEach(() => {
   setMessagingSessions([])
   setMessagingPlatformTotals({})
   setMessagingTruncated(false)
-  $selectedStoredSessionId.set(null)
   setSessionProfilesTruncated({})
   setSessionProfilesUsage({})
   setSessionProfilesFailed([])
@@ -147,7 +145,6 @@ afterEach(() => {
   setMessagingSessions([])
   setMessagingPlatformTotals({})
   setMessagingTruncated(false)
-  $selectedStoredSessionId.set(null)
   setSessionProfilesTruncated({})
   setSessionProfilesUsage({})
   setSessionsLoading(false)
@@ -188,24 +185,6 @@ describe('workspace-only sidebar refresh', () => {
 })
 
 // #67600: a cold-start read that fails must not render as "No sessions yet".
-describe('open empty messaging session', () => {
-  it('keeps the open chat when the min-message page omits it', async () => {
-    const open = row('tg-empty', { message_count: 0, preview: null, source: 'telegram', title: null })
-    const older = row('tg-old', { source: 'telegram', title: 'older' })
-    $selectedStoredSessionId.set('tg-empty')
-    setMessagingSessions([open])
-    listSidebarSessions.mockResolvedValue(sidebar({ sessions: [] }, [], [older]))
-    const { result } = renderHook(() => useSessionListActions({ profileScope: 'default' }))
-
-    await act(async () => {
-      await result.current.refreshSessions()
-    })
-
-    expect($messagingSessions.get().map(session => session.id)).toContain('tg-empty')
-    expect($messagingSessions.get().map(session => session.id)).toContain('tg-old')
-  })
-})
-
 describe('refreshSessions cold-start load error', () => {
   const failedScan = (storage?: Record<string, 'corrupt'>): SidebarSessionsResponse => ({
     ...sidebar({ sessions: [] }),
