@@ -51,3 +51,39 @@ class TestCronDeliveryEvidence:
 
         assert result is not None
         record_delivery.assert_not_called()
+
+
+class TestLiveLaneEvidence:
+    """The live lane counts only a confirmed text send (not a confirmation timeout)."""
+
+    @pytest.mark.parametrize(
+        "send_text_result, delivered, expected",
+        [
+            ((True, False, "m1"), True, True),
+            ((True, True, None), True, False),   # assume-delivered, no evidence
+            ((False, False, None), False, False),
+            ((True, False, "m1"), False, False),  # text ok, lane failed afterwards
+        ],
+    )
+    def test_confirmation_requires_text_evidence(self, send_text_result, delivered, expected):
+        from cron import scheduler_delivery_ki66 as ki66
+
+        send_text = ki66._wrap_live_send_text(lambda: send_text_result)
+
+        def lane():
+            send_text()
+            return delivered
+
+        ki66._run.state = state = {"confirmed": False, "live_text_confirmed": False}
+        try:
+            assert ki66._wrap_live_adapter(lane)() is delivered
+        finally:
+            ki66._run.state = None
+        assert state["confirmed"] is expected
+
+    def test_in_band_error_dict_is_rejected(self):
+        import cron.scheduler_delivery  # noqa: F401
+        from cron import scheduler_delivery_ki66 as ki66
+
+        assert ki66.confirm_delivery({"success": True, "message_id": 1, "error": "x"}) is False
+        assert ki66.confirm_delivery({"success": True, "message_id": 1}) is True

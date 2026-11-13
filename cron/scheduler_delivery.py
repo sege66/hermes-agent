@@ -1019,10 +1019,6 @@ def _confirm_adapter_delivery(
         return False
     if _result_field(send_result, "delivered") is False:
         return False
-    # ki66: dict results with a truthy in-band error are rejections (object
-    # results skip this — MagicMock would make any attribute truthy).
-    if isinstance(send_result, dict) and send_result.get("error"):
-        return False
     if (
         _result_field(send_result, "message_id") is None
         and not _result_field(send_result, "raw_response")
@@ -1499,7 +1495,6 @@ def _seed_live_delivery_sessions(t: _TargetDelivery, delivered_message_id) -> No
 def _deliver_via_live_adapter(
     t: _TargetDelivery, cleaned_text: str, media_files: list, *, target_errors: list,
     delivery_errors: list, unverified_targets: list,
-    confirmed_targets: Optional[list] = None,
 ) -> bool:
     """Deliver one target via the live gateway adapter; True once delivered. ``target_errors`` =
     this lane's soft failures (surfaced only if standalone also fails); ``delivery_errors`` =
@@ -1556,10 +1551,6 @@ def _deliver_via_live_adapter(
                 route_thread_id if route_thread_id is not None else "-",
                 delivered_message_id if delivered_message_id is not None else "-")
             delivered = True
-            # ki66: an in-flight confirmation timeout is assume-delivered (no resend) but carries
-            # no evidence — only a confirmed text send counts toward the cron delivery log.
-            if confirmed_targets is not None and text_to_send and not timed_out:
-                confirmed_targets.append(t.where)
             _seed_live_delivery_sessions(t, delivered_message_id)
     except Exception as e:
         err_msg = f"live adapter delivery to {t.where} failed: {e}"
@@ -1668,7 +1659,7 @@ def _queue_for_live_reconnect(t: _TargetDelivery, content: str, media_files: lis
 
 def _deliver_standalone(
     t: _TargetDelivery, content: str, media_files: list, target_errors: list, delivery_errors: list,
-) -> Optional[bool]:  # ki66: True once the send is confirmed (bare returns stay falsy)
+) -> None:
     """Standalone fallback for a target the live lane did not deliver."""
     job = t.job
     if t.is_relay:
@@ -1678,12 +1669,9 @@ def _deliver_standalone(
         delivery_errors.extend(target_errors)
         return
     result, err = _standalone_send(t, content, media_files)
-    if err is None and not _confirm_adapter_delivery(result):
-        if isinstance(result, dict):
-            error = result.get("error") or "unconfirmed send result"
-        else:
-            error = getattr(result, "error", None) or "unconfirmed send result"
-        err = f"delivery error: {error} (target {t.where})"
+    if err is None and result and result.get("error"):
+        # Not inside an except block — the error comes from the result dict, no traceback.
+        err = f"delivery error: {result['error']} (target {t.where})"
         logger.error("Job '%s': %s", job["id"], err)
     if err is not None:
         target_errors.append(err)
@@ -1704,7 +1692,6 @@ def _deliver_standalone(
         job, t.platform_name, t.chat_id, t.mirror_text, thread_id=t.thread_id,
         user_id=t.origin_user_id,
         enabled=t.mirror_this_target)
-    return True
 
 
 def _prepare_target_delivery(
@@ -1836,6 +1823,8 @@ def _unresolved_delivery_outcome(job: dict, for_failure: bool) -> Optional[str]:
     return msg
 
 
+from cron import scheduler_delivery_ki66 as _ki66_delivery  # noqa: E402 — ki66: confirmed-delivery log
+@_ki66_delivery.wrap_deliver_result
 def _deliver_result(
     job: dict, content: str, adapters=None, loop=None, *, for_failure: bool = False
 ) -> Optional[str]:
@@ -1941,7 +1930,6 @@ def _deliver_result(
         return msg
 
     delivery_errors = []
-    delivery_confirmed = False  # ki66: only confirmed live/standalone sends count as delivery evidence
     suppressed_targets = 0  # local: `job` is snapshotted into durable deferred records mid-loop
     for target in targets:
         # A failure notice for a platform that hides warning notifications is a suppressed
@@ -1984,21 +1972,14 @@ def _deliver_result(
         if t is None:
             continue
         target_errors: list = []
-        confirmed_targets: list = []
         delivered = t.live_adapter_ready and _deliver_via_live_adapter(
             t, cleaned_delivery_content, media_files,
             target_errors=target_errors, delivery_errors=delivery_errors,
             unverified_targets=unverified_targets,
-            confirmed_targets=confirmed_targets,
         )
-        if delivered:
-            if confirmed_targets:
-                delivery_confirmed = True
-        else:
-            if _deliver_standalone(
-                t, cleaned_delivery_content, media_files, target_errors, delivery_errors,
-            ):
-                delivery_confirmed = True
+        if not delivered:
+            _deliver_standalone(
+                t, cleaned_delivery_content, media_files, target_errors, delivery_errors)
 
     # Filter-time drops apply to every target; report them once. A run whose every target was
     # suppressed sent nothing, so there is no drop to report.
@@ -2007,9 +1988,6 @@ def _deliver_result(
     else:
         delivery_errors.extend(policy_drop_errors)
     _record_delivery_verification(job, unverified_targets)
-    if delivery_confirmed:
-        from cron.jobs import record_cron_delivery
-        record_cron_delivery(job.get("id", ""), job.get("name", ""), content)
     return "; ".join(delivery_errors) if delivery_errors else None
 
 

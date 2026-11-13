@@ -87,7 +87,8 @@ def _send_all(texts, media_files=None) -> bool:
     if not target:
         return False
     platform, pconfig, chat_id, thread_id = target
-    from cron.scheduler_delivery import _confirm_adapter_delivery
+    import cron.scheduler_delivery  # noqa: F401 — confirm_delivery resolves it lazily
+    from cron.scheduler_delivery_ki66 import confirm_delivery as _confirm_adapter_delivery
     from tools.send_message_tool import _send_to_platform
 
     remaining = list(media_files or [])

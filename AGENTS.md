@@ -162,5 +162,3 @@ Every former god file is a **facade** (public entry points + the names other pac
 
 Long-form background: `website/docs/developer-guide/`. Workflow rules (PR/issue/review/salvage
 process) live in the `hermes-agent-dev` skill, not here.
-
-Local (ki66) guardrails: see `AGENTS.ki66.md` (GitNexus code-intelligence rules) — read it before editing code.
