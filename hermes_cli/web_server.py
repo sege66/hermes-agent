@@ -863,14 +863,7 @@ app.include_router(_ui_preferences_routes.router, dependencies=[_Depends(_route_
 app.include_router(_gateway_connections_routes.router, dependencies=[_Depends(_route_on("gateway_connections"))])
 app.include_router(_gateway_connections_reach_routes.router, dependencies=[_Depends(_route_on("gateway_connections"))])
 
-
-from hermes_cli import web_server_ki66 as _ki66_web  # ki66: body lives in the local-only module
-
-
-@app.post("/internal/session-updated")
-async def notify_external_session_updated(request: Request, body: _ki66_web.ExternalSessionUpdated):
-    return await _ki66_web.notify_external_session_updated(request, body, "session.external_updated")
-
+app.include_router(__import__("hermes_cli.web_server_ki66", fromlist=["router"]).router)  # ki66: /internal/session-updated
 
 # Plugin API routes and the dashboard auth routes (/login, /auth/*, /api/auth/*)
 # mount before the SPA catch-all so /{full_path:path} doesn't swallow them. Auth

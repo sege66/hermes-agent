@@ -1,11 +1,10 @@
 """ki66 (local fork) dashboard-backend additions, kept out of ``web_server.py``.
 
-``hermes_cli/web_server.py`` is upstream-owned; it only keeps the route
-decorator and a one-line delegate so upstream releases merge cleanly. The
-decorator ``@app.post("/internal/session-updated")`` and the event token
-``"session.external_updated"`` deliberately stay in ``web_server.py``: the
-external sync guard (``desktop_external_session_broadcast``) greps for them
-there.
+``hermes_cli/web_server.py`` is upstream-owned; it keeps a single
+``app.include_router(...web_server_ki66...router)`` line so upstream releases
+merge cleanly. The route (``@router.post("/internal/session-updated")``) and
+the emit live here and in ``tui_gateway/server_ki66.py``; the external sync
+guard reads both files when that include line is present.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 
@@ -44,13 +43,10 @@ async def notify_external_session_updated(
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    from tui_gateway.server import _broadcast_global_event
+    from tui_gateway.server_ki66 import broadcast_session_external_updated
 
-    # The tui_gateway helper ``broadcast_session_external_updated`` exists so
-    # the shared event contract can see the emit.
     await asyncio.to_thread(
-        _broadcast_global_event,
-        event,
+        broadcast_session_external_updated,
         {
             "stored_session_id": session_id,
             "role": body.role,
@@ -58,3 +54,11 @@ async def notify_external_session_updated(
         },
     )
     return {"ok": True}
+
+
+router = APIRouter()
+
+
+@router.post("/internal/session-updated")
+async def _session_updated_route(request: Request, body: ExternalSessionUpdated):
+    return await notify_external_session_updated(request, body, "session.external_updated")

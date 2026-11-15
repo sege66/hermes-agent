@@ -16,16 +16,12 @@ import {
   profileScoped,
   STARTUP_REQUEST_TIMEOUT_MS
 } from './client'
-import { cronDeliveriesReader } from './cron.ki66'
 
 // The cron trigger endpoint intentionally waits for the whole job so its
 // response reflects the persisted execution result. Agent jobs can run far
 // longer than the Electron fetch default; keep this override local to the one
 // synchronous long-operation endpoint rather than weakening all API timeouts.
 const CRON_TRIGGER_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000
-
-export type { CronDelivery } from './cron.ki66'
-export const listCronDeliveries = cronDeliveriesReader('/api/cron/deliveries')
 
 // Cron jobs are stored per-profile (<HERMES_HOME>/cron/jobs.json), and the
 // backend's list endpoint defaults to 'all'. Pass a concrete profile key to

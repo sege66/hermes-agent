@@ -1,6 +1,6 @@
 // ki66 (local-only): read-only cron delivery log used by the Desktop cron mirror.
-// api/cron.ts keeps only the route literal + the export so upstream edits to
-// that file do not collide with this body.
+// Lives entirely here (api/cron.ts is untouched upstream code); use-cron-merge
+// imports it from this module.
 import { connectionScoped, hermesApi, profileScoped, STARTUP_REQUEST_TIMEOUT_MS } from './client'
 
 export interface CronDelivery {
@@ -22,3 +22,5 @@ export function cronDeliveriesReader(path: string) {
     return result.data ?? []
   }
 }
+
+export const listCronDeliveries = cronDeliveriesReader('/api/cron/deliveries')

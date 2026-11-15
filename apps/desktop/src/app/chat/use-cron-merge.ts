@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
-import { getSession, listCronDeliveries } from '@/hermes'
+import { listCronDeliveries } from '@/api/cron.ki66'
+import { getSession } from '@/hermes'
 import { type ChatMessage, prependMarkerLine, textPart } from '@/lib/chat-messages'
 import { isMessagingSource } from '@/lib/session-source'
 
