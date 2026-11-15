@@ -1823,8 +1823,6 @@ def _unresolved_delivery_outcome(job: dict, for_failure: bool) -> Optional[str]:
     return msg
 
 
-from cron import scheduler_delivery_ki66 as _ki66_delivery  # noqa: E402 — ki66: confirmed-delivery log
-@_ki66_delivery.wrap_deliver_result
 def _deliver_result(
     job: dict, content: str, adapters=None, loop=None, *, for_failure: bool = False
 ) -> Optional[str]:
@@ -1989,6 +1987,10 @@ def _deliver_result(
         delivery_errors.extend(policy_drop_errors)
     _record_delivery_verification(job, unverified_targets)
     return "; ".join(delivery_errors) if delivery_errors else None
+
+
+from cron import scheduler_delivery_ki66 as _ki66_delivery  # noqa: E402 — ki66: confirmed-delivery log
+_deliver_result = _ki66_delivery.wrap_deliver_result(_deliver_result)  # ki66: before scheduler re-exports it
 
 
 # Late-bound origin namespace (see module docstring). Imported LAST so this module is fully

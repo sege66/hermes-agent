@@ -11,6 +11,7 @@ the metadata format returned zero headers; without it all headers come back and
 ``_headers_dict`` filters.
 """
 
+import functools
 import json
 import sys
 from pathlib import Path
@@ -37,18 +38,29 @@ def ensure_gws_credentials_file(token_path: Path, credentials_path: Path, normal
     return credentials_path
 
 
-def refresh_or_exit(creds, request, scripts_dir: Path) -> None:
-    """``creds.refresh(request)``; a RefreshError prints re-auth steps and exits 1."""
-    try:
-        from google.auth.exceptions import RefreshError
-    except ImportError:  # google-auth absent/stubbed: nothing to translate
-        RefreshError = ()
-    try:
-        creds.refresh(request)
-    except RefreshError as exc:
-        print(f"Google OAuth refresh failed: {exc}", file=sys.stderr)
-        print("Re-run Google Workspace OAuth setup with a valid client secret.", file=sys.stderr)
-        print(f"  python {scripts_dir / 'setup.py'} --client-secret /path/to/client_secret.json", file=sys.stderr)
-        print(f"  python {scripts_dir / 'setup.py'} --auth-url", file=sys.stderr)
-        print(f"  python {scripts_dir / 'setup.py'} --auth-code CODE_OR_REDIRECT_URL", file=sys.stderr)
-        sys.exit(1)
+def exit_on_refresh_error(get_credentials, scripts_dir: Path):
+    """Wrap ``get_credentials``: a RefreshError prints re-auth steps and exits 1.
+
+    Applied as a reassignment after the upstream ``get_credentials`` definition so
+    its body (``creds.refresh(Request())``) stays byte-identical to upstream.
+    """
+    @functools.wraps(get_credentials)
+    def wrapper(*args, **kwargs):
+        try:
+            from google.auth.exceptions import RefreshError
+        except ImportError:  # google-auth absent/stubbed: nothing to translate
+            return get_credentials(*args, **kwargs)
+        try:
+            return get_credentials(*args, **kwargs)
+        except RefreshError as exc:
+            _print_reauth_and_exit(exc, scripts_dir)
+    return wrapper
+
+
+def _print_reauth_and_exit(exc, scripts_dir: Path) -> None:
+    print(f"Google OAuth refresh failed: {exc}", file=sys.stderr)
+    print("Re-run Google Workspace OAuth setup with a valid client secret.", file=sys.stderr)
+    print(f"  python {scripts_dir / 'setup.py'} --client-secret /path/to/client_secret.json", file=sys.stderr)
+    print(f"  python {scripts_dir / 'setup.py'} --auth-url", file=sys.stderr)
+    print(f"  python {scripts_dir / 'setup.py'} --auth-code CODE_OR_REDIRECT_URL", file=sys.stderr)
+    sys.exit(1)

@@ -263,7 +263,7 @@ def get_credentials():
 
     creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), _stored_token_scopes())
     if creds.expired and creds.refresh_token:
-        _google_api_ki66.refresh_or_exit(creds, Request(), Path(__file__).parent)
+        creds.refresh(Request())
         TOKEN_PATH.write_text(
             json.dumps(
                 _normalize_authorized_user_payload(json.loads(creds.to_json())),
@@ -274,6 +274,9 @@ def get_credentials():
         print("Token is invalid. Re-run setup.", file=sys.stderr)
         sys.exit(1)
     return creds
+
+
+get_credentials = _google_api_ki66.exit_on_refresh_error(get_credentials, Path(__file__).parent)  # ki66
 
 
 def build_service(api, version):

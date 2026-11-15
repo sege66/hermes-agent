@@ -9,8 +9,10 @@ What this adds, without editing the upstream function bodies:
 * a standalone send whose result does not confirm delivery is an error;
 * a dict result with a truthy in-band ``error`` is a rejection.
 
-``scheduler_delivery.py`` carries a single hook: ``@wrap_deliver_result`` on
-``_deliver_result``. The lane wrappers are installed lazily (and idempotently)
+``scheduler_delivery.py`` carries a single hook: ``_deliver_result =
+wrap_deliver_result(_deliver_result)`` just before its late-bound imports (so
+``cron.scheduler`` re-exports the wrapped function; a decorator line above the
+``def`` collided with upstream helpers inserted there). The lane wrappers are installed lazily (and idempotently)
 on each run by replacing module globals, which the upstream functions resolve
 at call time.
 """

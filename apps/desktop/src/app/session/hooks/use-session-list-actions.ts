@@ -54,8 +54,6 @@ import { $sessionTiles, $workingSessionIds, getRecentlySettledSessionIds } from 
 
 import { refreshCronJobs as refreshCronJobsStore } from '../../cron/cron-actions'
 
-import { keepOpenMessagingRows } from './use-session-list-actions.ki66'
-
 // The recents list is local-only: cron rows have their own section, kanban
 // dispatcher workers are read on the board, finite one-shot runs (`hermes -z`,
 // `chat -q`) are not conversations, and each messaging platform
@@ -567,3 +565,6 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
     refreshSessions
   }
 }
+
+// ki66: kept at EOF on purpose — the upstream import block above churns every release.
+import { keepOpenMessagingRows } from './use-session-list-actions.ki66'
