@@ -3,9 +3,9 @@
 The fork merges same-branch divergence when it shares an ancestor with upstream
 (``hermes_cli.update_ki66.merge_unique_local_commits``), preserving both histories and
 files. Orphan history still resets only after parking the old HEAD under
-``refs/hermes-update-backups/`` and printing its name. The upstream module keeps one
-adapted test (``test_hermes_update_keeps_local_commit_behind_a_rescue_ref``) because
-upstream asserts the reset this fork replaces.
+``refs/hermes-update-backups/`` and printing its name. The upstream
+``test_hermes_update_keeps_local_commit_behind_a_rescue_ref`` asserts the reset this fork
+replaces; the repository-root conftest.py deselects it and the merge case below replaces it.
 """
 
 from __future__ import annotations
@@ -44,3 +44,24 @@ def test_orphan_history_resets_with_named_rescue_ref(diverged_checkout, monkeypa
     assert dropped == [local_sha]
     assert _git(checkout, "show", f"{local_sha}:orphan-only.txt").stdout == "orphan\n"
     assert (checkout / "upstream-only.txt").read_text(encoding="utf-8") == "upstream\n"
+
+
+def test_same_branch_divergence_merges_and_keeps_both_histories(diverged_checkout, monkeypatch, capsys):  # noqa: F811
+    checkout, local_sha = diverged_checkout
+    monkeypatch.setattr(update_cmd._m(), "PROJECT_ROOT", checkout)
+
+    update_cmd._pull_updates(
+        GIT, "main", None, prompt_for_restore=False, gw_input_fn=None,
+        discard_local_changes=False, keep_stash=False)
+
+    out = capsys.readouterr().out
+    for tip in (local_sha, "origin/main"):
+        assert _git(checkout, "merge-base", "--is-ancestor", tip, "HEAD", check=False).returncode == 0
+    assert (checkout / "local-fix.txt").read_text(encoding="utf-8") == "local\n"
+    assert (checkout / "upstream-only.txt").read_text(encoding="utf-8") == "upstream\n"
+    assert _rescue_refs(checkout) == {}
+    tags = _git(checkout, "tag", "--points-at", local_sha).stdout.split()
+    assert any(tag.startswith("pre-update-") for tag in tags)
+    assert "1 unique commit(s) ahead of" in out
+    assert "merging to preserve them" in out
+    assert "resetting" not in out

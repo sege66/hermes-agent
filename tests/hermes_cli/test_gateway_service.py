@@ -1738,7 +1738,6 @@ class TestProfileArg:
     def test_launchd_plist_wraps_gateway_stderr_with_timestamps(self, tmp_path, monkeypatch):
         profile_dir = tmp_path / ".hermes" / "profiles" / "mybot"
         profile_dir.mkdir(parents=True)
-        monkeypatch.setattr(gateway_cli, "PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("HERMES_HOME", str(profile_dir))
         monkeypatch.setattr(gateway_cli, "get_hermes_home", lambda: profile_dir)
@@ -1761,13 +1760,11 @@ class TestProfileArg:
 
         assert program_args[separator - 2:separator] == ["--error-log", str(profile_dir / "logs" / "gateway.error.log")]
         assert "--replace" not in program_args
-        assert "--external-supervisor" not in gateway_cli._gateway_run_command()
 
     def test_launchd_osascript_wrapper_round_trips_shell_hostile_paths(self, tmp_path, monkeypatch):
         """A home with spaces, quotes and a backslash survives shlex + JXA + plist quoting."""
         profile_dir = tmp_path / 'my "odd" dir \\ here' / ".hermes"
         profile_dir.mkdir(parents=True)
-        monkeypatch.setattr(gateway_cli, "PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("HERMES_HOME", str(profile_dir))
         monkeypatch.setattr(gateway_cli, "get_hermes_home", lambda: profile_dir)

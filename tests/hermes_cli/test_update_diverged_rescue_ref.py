@@ -70,7 +70,7 @@ def _assert_reset_kept_local_commit(checkout, local_sha, output):
 
 def test_hermes_update_keeps_local_commit_behind_a_rescue_ref(
         diverged_checkout, monkeypatch, capsys):
-    """The real apply path preserves local and upstream ancestry and files."""
+    """The real apply path: ff-only fails, the reconcile resets, the local commit stays reachable."""
     checkout, local_sha = diverged_checkout
     monkeypatch.setattr(update_cmd._m(), "PROJECT_ROOT", checkout)
 
@@ -79,16 +79,8 @@ def test_hermes_update_keeps_local_commit_behind_a_rescue_ref(
         discard_local_changes=False, keep_stash=False)
 
     out = capsys.readouterr().out
-    for tip in (local_sha, "origin/main"):
-        assert _git(checkout, "merge-base", "--is-ancestor", tip, "HEAD", check=False).returncode == 0
-    assert (checkout / "local-fix.txt").read_text(encoding="utf-8") == "local\n"
-    assert (checkout / "upstream-only.txt").read_text(encoding="utf-8") == "upstream\n"
-    assert _rescue_refs(checkout) == {}
-    tags = _git(checkout, "tag", "--points-at", local_sha).stdout.split()
-    assert any(tag.startswith("pre-update-") for tag in tags)
-    assert "1 unique commit(s) ahead of origin/main" in out
-    assert "merging to preserve them" in out
-    assert "resetting" not in out
+    _assert_reset_kept_local_commit(checkout, local_sha, out)
+    assert "1 commit(s) not on origin/main" in out
 
 
 @pytest.fixture()

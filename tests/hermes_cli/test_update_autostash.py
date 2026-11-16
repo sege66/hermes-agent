@@ -12,6 +12,8 @@ from datetime import UTC
 
 
 @pytest.mark.parametrize('history,failure,keep', [
+    ('ordinary', None, False), ('ordinary', None, True),
+    ('ordinary', 'reset', False), ('ordinary', 'reset', True),
     ('orphan', None, False), ('orphan', 'reset', False),
     ('orphan', 'ref', False), ('orphan', 'head', False),
 ])
@@ -19,7 +21,6 @@ def test_update_preserves_local_work_and_rescues_orphan_before_reset(
     update_tree, monkeypatch, capsys, history, failure, keep,
 ):
     t = update_tree
-    monkeypatch.setattr('hermes_cli.update_owning_install.retarget_to_owning_install', lambda *_: None)
     git(t.clone, 'checkout', '-q', 'main')
     if history == 'orphan':
         git(t.clone, 'checkout', '--orphan', 'fresh')
