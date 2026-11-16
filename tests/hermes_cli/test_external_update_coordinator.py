@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from hermes_cli import main as hermes_main
+from hermes_cli import update_ki66
 
 
 class ExecCalled(RuntimeError):
@@ -38,7 +39,7 @@ def test_real_cli_update_execs_external_coordinator(tmp_path, monkeypatch):
     monkeypatch.setattr(hermes_main.os, "execve", fake_execve)
 
     with pytest.raises(ExecCalled):
-        hermes_main._delegate_update_to_external_coordinator()
+        update_ki66.delegate_update_to_external_coordinator()
 
     assert captured["path"] == str(coordinator)
     assert captured["argv"] == [
@@ -60,7 +61,7 @@ def test_internal_worker_marker_prevents_recursion(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_UPDATE_COORDINATOR_ACTIVE", "1")
     monkeypatch.setattr(hermes_main.sys, "argv", ["hermes", "update", "--yes"])
 
-    assert hermes_main._delegate_update_to_external_coordinator() is False
+    assert update_ki66.delegate_update_to_external_coordinator() is False
 
 
 def test_readonly_flags_bypass_coordinator(tmp_path, monkeypatch):
@@ -71,7 +72,7 @@ def test_readonly_flags_bypass_coordinator(tmp_path, monkeypatch):
 
     for flag in ("--plan", "--check"):
         monkeypatch.setattr(hermes_main.sys, "argv", ["hermes", "update", flag])
-        assert hermes_main._delegate_update_to_external_coordinator() is False
+        assert update_ki66.delegate_update_to_external_coordinator() is False
 
 
 def test_programmatic_cmd_update_call_keeps_upstream_path(tmp_path, monkeypatch):
@@ -80,4 +81,15 @@ def test_programmatic_cmd_update_call_keeps_upstream_path(tmp_path, monkeypatch)
     monkeypatch.delenv("HERMES_UPDATE_COORDINATOR_ACTIVE", raising=False)
     monkeypatch.setattr(hermes_main.sys, "argv", ["pytest", "-q"])
 
-    assert hermes_main._delegate_update_to_external_coordinator() is False
+    assert update_ki66.delegate_update_to_external_coordinator() is False
+
+
+def test_cmd_update_delegates_before_upstream_preflight(monkeypatch):
+    """main.cmd_update keeps its one-line ki66 hook ahead of the upstream path."""
+    import hermes_cli.update_owning_install as owning
+
+    monkeypatch.setattr(owning, "retarget_to_owning_install", lambda root: None)
+    monkeypatch.setattr(update_ki66, "delegate_update_to_external_coordinator", lambda: True)
+    monkeypatch.setattr(hermes_main, "_update_preflight_handled",
+                        lambda args: (_ for _ in ()).throw(AssertionError("upstream path reached")))
+    assert hermes_main.cmd_update(object()) is None

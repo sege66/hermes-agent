@@ -33,7 +33,6 @@ from hermes_cli import update_cmd_commit as _commit
 from hermes_cli import update_cmd_posix_pause as _posix_pause
 from hermes_cli.update_cmd_pause_gate import _checkout_move, _moves_for
 from hermes_cli import update_cmd_check as _check
-from hermes_cli import update_ki66 as _ki66
 
 # Re-exports: every split-module name stays reachable (and monkeypatchable) as update_cmd.<name>.
 from hermes_cli.update_abort_recovery import (
@@ -852,6 +851,7 @@ def _reconcile_diverged_checkout(git_cmd, branch: str, pre_pull_sha, *, target_r
     merge_base_result = _git_run(git_cmd, ["merge-base", "HEAD", merge_ref])
     has_common_ancestor = bool(
         merge_base_result.returncode == 0 and merge_base_result.stdout.strip())
+    from hermes_cli import update_ki66 as _ki66
     if _ki66.merge_unique_local_commits(git_cmd, merge_ref, has_common_ancestor):
         return
     if pre_pull_sha:
@@ -1837,6 +1837,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
     completion_request = _source_completion_request(
         opts, _pre_update_plan, pre_update_snapshot_id, _windows_gateway_resume,
         had_desktop_app_before_update, gateway_mode)
+    from hermes_cli import update_ki66 as _ki66
     if _ki66.complete_protected_update(git_cmd, use_zip_update, completion_request, _windows_gateway_resume):
         return
     branch = _m()._resolve_update_branch(args)

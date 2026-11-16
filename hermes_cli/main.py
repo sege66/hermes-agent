@@ -2259,7 +2259,6 @@ def _update_preflight_handled(args) -> bool:
 
 
 from hermes_cli.update_receipt import update_receipt_scope
-from hermes_cli.update_ki66 import delegate_update_to_external_coordinator as _delegate_update_to_external_coordinator
 
 
 @update_receipt_scope()
@@ -2272,7 +2271,8 @@ def cmd_update(args):
     from hermes_cli.update_owning_install import retarget_to_owning_install
 
     retarget_to_owning_install(PROJECT_ROOT)
-    if _delegate_update_to_external_coordinator():
+    from hermes_cli.update_ki66 import delegate_update_to_external_coordinator  # ki66
+    if delegate_update_to_external_coordinator():
         return
     if _update_preflight_handled(args):
         return

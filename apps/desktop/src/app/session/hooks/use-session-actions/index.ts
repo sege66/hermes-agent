@@ -226,7 +226,6 @@ import {
   upsertOptimisticSession,
   upsertUnlistedSessionOwner
 } from './utils'
-import { emptyMessagingShellHasForeignRows } from './utils.ki66'
 
 interface SessionActionsOptions {
   activeSessionId: string | null
@@ -3355,3 +3354,6 @@ export function useSessionActions({
     unarchiveSession
   }
 }
+
+// ki66: kept at EOF on purpose — the upstream import block above churns every release.
+import { emptyMessagingShellHasForeignRows } from './utils.ki66'
