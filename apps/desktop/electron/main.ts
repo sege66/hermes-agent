@@ -651,7 +651,6 @@ import { ChannelStrategy } from './updater/channel-strategy'
 import { verifyPreparedChannelInstaller } from './updater/channel-windows-host'
 import { type CheckoutStrategy, createCheckoutStrategy } from './updater/checkout'
 import { readSourceUpdate, sourceChannelName, type SourceUpdate } from './updater/checkout-source'
-import { handOffMacUpdateToCoordinator } from './updater/coordinator'
 import { ExternalStrategy } from './updater/external'
 import { readUpdatesFeedBaseFromConfig, resolveFeedBaseUrl } from './updater/feed-config'
 import { createChannelMacStrategy, createMacStrategy } from './updater/mac-client'
@@ -4344,7 +4343,7 @@ async function applyUpdates(): Promise<UpdaterApplyResultWire> {
         return managedBusy
       }
 
-      const coordinated = await handOffMacUpdateToCoordinator({
+      const coordinated = await (await import('./updater/coordinator')).handOffMacUpdateToCoordinator({
         hermesHome: HERMES_HOME,
         updateRoot: resolveUpdateRoot(),
         isMac: IS_MAC,
