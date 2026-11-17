@@ -89,7 +89,12 @@ def _send_all(texts, media_files=None) -> bool:
     platform, pconfig, chat_id, thread_id = target
     import cron.scheduler_delivery  # noqa: F401 — confirm_delivery resolves it lazily
     from cron.scheduler_delivery_ki66 import confirm_delivery as _confirm_adapter_delivery
-    from tools.send_message_tool import _send_to_platform
+    # v0.23.2 moved the sender to gateway.outbound.send. This process still
+    # runs the pre-move tree until the safe update swaps it.
+    try:
+        from gateway.outbound.send import _send_to_platform
+    except ImportError:
+        from tools.send_message_tool import _send_to_platform
 
     remaining = list(media_files or [])
     delivered = True

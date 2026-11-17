@@ -1,10 +1,34 @@
 """Local (ki66) additions split out of the upstream-owned test_scheduler.py."""
 
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from cron.scheduler import _deliver_result
+
+
+def _patch_platform_send(send):
+    """Patch the sender this tree actually imports.
+
+    v0.23.2 moved it to gateway.outbound.send. The previous tree still
+    exposes tools.send_message_tool.
+    """
+    stack = ExitStack()
+    patched = False
+    for name in (
+        "gateway.outbound.send._send_to_platform",
+        "tools.send_message_tool._send_to_platform",
+    ):
+        try:
+            stack.enter_context(patch(name, new=send))
+        except (AttributeError, ImportError, ModuleNotFoundError):
+            continue
+        patched = True
+    if not patched:
+        stack.close()
+        raise AssertionError("no platform sender to patch")
+    return stack
 
 
 class TestCronDeliveryEvidence:
@@ -25,7 +49,7 @@ class TestCronDeliveryEvidence:
 
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}), \
-             patch("tools.send_message_tool._send_to_platform", new=send), \
+             _patch_platform_send(send), \
              patch("cron.jobs.record_cron_delivery") as record_delivery:
             result = _deliver_result(job, "confirmed content")
         return result, record_delivery

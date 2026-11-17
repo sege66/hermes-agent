@@ -111,6 +111,26 @@ def test_target_resolution_retries_after_temporary_unavailability(monkeypatch):
     assert resolved[2:] == ("123", None)
 
 
+def _setattr_platform_send(monkeypatch, send):
+    """Patch the sender this tree actually imports.
+
+    v0.23.2 moved it to gateway.outbound.send. The previous tree still
+    exposes tools.send_message_tool.
+    """
+    patched = False
+    for name in (
+        "gateway.outbound.send._send_to_platform",
+        "tools.send_message_tool._send_to_platform",
+    ):
+        try:
+            monkeypatch.setattr(name, send)
+        except (AttributeError, ImportError, ModuleNotFoundError):
+            continue
+        patched = True
+    if not patched:
+        raise AssertionError("no platform sender to patch")
+
+
 @pytest.mark.parametrize(
     ("send_result", "expected"),
     [
@@ -123,6 +143,6 @@ def test_target_resolution_retries_after_temporary_unavailability(monkeypatch):
 def test_send_all_requires_explicit_success(monkeypatch, send_result, expected):
     monkeypatch.setattr(mirror, "_resolve_target", lambda: ("telegram", object(), "123", None))
     send = AsyncMock(return_value=send_result)
-    monkeypatch.setattr("tools.send_message_tool._send_to_platform", send)
+    _setattr_platform_send(monkeypatch, send)
 
     assert mirror._send_all(["hello"]) is expected
