@@ -166,6 +166,11 @@ def _format_index_value_reading(match: re.Match[str]) -> str:
 
 def _looks_like_korean_tts(provider: str, tts_config: Dict[str, Any]) -> bool:
     provider_cfg = tts_config.get(provider) if isinstance(tts_config.get(provider), dict) else {}
+    if not provider_cfg:
+        # command providers live under tts.providers.<name> (e.g. edge-current, supertonic-f5)
+        named = tts_config.get("providers")
+        named = named.get(provider) if isinstance(named, dict) else None
+        provider_cfg = named if isinstance(named, dict) else {}
     voice = str(provider_cfg.get("voice") or provider_cfg.get("voice_id") or "")
     language = str(provider_cfg.get("language") or tts_config.get("language") or "")
     instructions = str(provider_cfg.get("instructions") or "")
@@ -208,22 +213,24 @@ class _DropRecords(logging.Filter):
 
 
 def _ki66_korean_reading(
-    text: str, speed: Optional[float], provider: Optional[str], voice_id: Optional[str]
+    text: str, speed: Optional[float], voice_id: Optional[str]
 ) -> Tuple[str, Optional[str]]:
     """Hook for ``text_to_speech_tool`` -> ``(text, error_json)``.
 
     Korean reading normalization must run BEFORE the shared English cleaner:
     prepare_spoken_text rewrites "23°C"→"23 degrees Celsius" and "$12.34"→"12.34 dollars",
     which destroys the Korean patterns. The provider/voice resolution it needs is the same
-    one upstream runs right after the cleaner, so it is resolved here first (returning the
+    one upstream runs right after the cleaner (configured provider only), so it is resolved here first (returning the
     voice_id error at the same point as before the split) and upstream then repeats it. The
     voice-override warning is muted for this first pass so it is still logged exactly once;
     the provider-override warning is already once-per-process.
     """
     import tools.tts_tool as _tts_tool
 
+    # 2026-11-19: upstream 78f3677c7ea dropped the per-call ``provider`` argument (tts.provider in
+    # config.yaml is the only selector), so the hook takes none and calls the 2-arg override.
     tts_config, resolved = _tts_tool._apply_call_overrides(
-        _tts_tool._load_tts_config(), speed, provider)
+        _tts_tool._load_tts_config(), speed)
     mute = _DropRecords()
     _tts_tool.logger.addFilter(mute)
     try:

@@ -475,7 +475,7 @@ def text_to_speech_tool(
         return _find_voices(find_voices)
     if not text or not text.strip():
         return tool_error("Text is required", success=False)
-    text, _ki66_error = _ki66_korean_reading(text, speed, provider, voice_id)
+    text, _ki66_error = _ki66_korean_reading(text, speed, voice_id)
     if _ki66_error:
         return _ki66_error
     try:  # shared cleaner: markdown, emoji, think blocks, verifier footer, units, newlines
