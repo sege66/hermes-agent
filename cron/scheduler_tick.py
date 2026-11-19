@@ -87,6 +87,9 @@ def _pre_dispatch_housekeeping(_sched, headless: bool) -> None:
     except Exception as _legacy_exc:
         _sched.logger.warning("Legacy Bot Chat pending drain failed: %s", _legacy_exc, exc_info=True)
     _sched._maybe_reap_dead_owners()
+    # ki66: write Bot Chat receipt / lost-fire-claim outcomes back so no run reads "delivery_queued" forever.
+    from cron.delivery_reconcile import reconcile_quietly
+    reconcile_quietly()
 
 
 def _tick_admitted(
