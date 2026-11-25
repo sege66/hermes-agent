@@ -894,3 +894,8 @@ class CLIStreamMixin:
                 print_fn=diff_printer(_cprint))
         except Exception:
             logger.debug("Edit diff preview failed for %s", function_name, exc_info=True)
+
+# ki66: reasoning soft-wrap. The class methods above stay the upstream shape; this
+# replaces the live reasoning paint so a reflowing terminal can rewrap the line.
+from hermes_cli.ki66_reasoning_stream import install as _ki66_install_reasoning_softwrap  # noqa: E402
+_ki66_install_reasoning_softwrap(CLIStreamMixin)

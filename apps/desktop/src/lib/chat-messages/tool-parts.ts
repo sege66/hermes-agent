@@ -178,7 +178,7 @@ function findToolPartIndex(
 
   if (stableId) {
     const stableIndex = parts.findIndex(
-      part => part.type === 'tool-call' && part.toolCallId === stableId && !Object.hasOwn(part, 'result')
+      part => part.type === 'tool-call' && part.toolCallId === stableId && part.result === undefined
     )
 
     if (stableIndex >= 0) {
@@ -428,7 +428,7 @@ export const hasUnresolvedToolCall = (message: ChatMessage) =>
  * sealed with `completedAt` but no `result`, renders as "Result unavailable"),
  * instead of seeding a fresh bubble with a duplicate row (#113035).
  *
- * Only an UNRESOLVED part (never completed: no `result` key, sealed or not)
+ * Only an UNRESOLVED part (no defined `result`, sealed or not)
  * can own an event. Tool call ids are not unique across turns — llama.cpp
  * emits one constant id for every call and Hermes' own deterministic ids
  * repeat — so a part that already carries its completion is a finished call
@@ -476,7 +476,7 @@ export function toolCallOwnerMessageId(
     const message = messages[messageIndex]
 
     for (const part of message.parts) {
-      if (part.type !== 'tool-call' || part.toolCallId !== stableId || Object.hasOwn(part, 'result')) {
+      if (part.type !== 'tool-call' || part.toolCallId !== stableId || part.result !== undefined) {
         continue
       }
 
@@ -545,7 +545,7 @@ export function toolEventOwnerMessageId(
 
   const settledPart = messages
     .find(message => message.id === settledId)
-    ?.parts.find(part => part.type === 'tool-call' && part.toolCallId === stableId && !Object.hasOwn(part, 'result'))
+    ?.parts.find(part => part.type === 'tool-call' && part.toolCallId === stableId && part.result === undefined)
 
   return settledPart?.type === 'tool-call' && sameCallArgs(settledPart.args, payload)
     ? settledId
@@ -1107,12 +1107,12 @@ export function applyStoredToolResultToParts(
       : (toolMessage.text ?? toolMessage.context ?? toolMessage.name)
 
   // Tool-call ids are not unique across turns (llama.cpp/Hermes reuse them),
-  // so only an unresolved part may own a stored result. Property presence,
-  // not truthiness: `false`/`null`/`''`/`0` are completed results too.
+  // so only an unresolved part may own a stored result. A result-less completion
+  // carries `result: undefined`; `false`/`null`/`''`/`0` are completed results.
   const partIndex = parts.findIndex(
     part =>
       part.type === 'tool-call' &&
-      !Object.hasOwn(part, 'result') &&
+      part.result === undefined &&
       ((toolCallId && part.toolCallId === toolCallId) || (!toolCallId && part.toolName === toolName))
   )
 

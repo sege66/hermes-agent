@@ -25,7 +25,7 @@ def cli_stub(monkeypatch):
     cli.show_timestamps = False
     cli._reset_stream_state()
     emitted = []
-    monkeypatch.setattr(climod, "_cprint", lambda s: emitted.append(s))
+    monkeypatch.setattr(climod, "_cprint", lambda s, **_k: emitted.append(s))
     monkeypatch.setattr(climod, "_terminal_width_for_streaming", lambda: 74)
     monkeypatch.setattr(HermesCLI, "_scrollback_box_width", lambda self: 74)
     return cli, emitted

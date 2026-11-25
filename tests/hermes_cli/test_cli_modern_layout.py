@@ -19,7 +19,7 @@ def _run_turn(monkeypatch, width: int, *, modern: bool) -> list[str]:
     cli.final_response_markdown, cli.show_timestamps = "raw", False
     cli._reset_stream_state()
     emitted: list[str] = []
-    monkeypatch.setattr(climod, "_cprint", lambda s: emitted.append(_plain(s)))
+    monkeypatch.setattr(climod, "_cprint", lambda s, **_k: emitted.append(_plain(s)))
     monkeypatch.setattr(climod, "_terminal_width_for_streaming", lambda: width)
     monkeypatch.setattr(HermesCLI, "_scrollback_box_width", lambda self: width)
     cli._stream_reasoning_delta("**Planning the change**\nI will read calc.py first.\n")
@@ -65,7 +65,7 @@ def test_one_line_reasoning_is_shown_once(monkeypatch, reasoning):
     cli.final_response_markdown, cli.show_timestamps = "raw", False
     cli._reset_stream_state()
     emitted: list[str] = []
-    monkeypatch.setattr(climod, "_cprint", lambda s: emitted.append(_plain(s)))
+    monkeypatch.setattr(climod, "_cprint", lambda s, **_k: emitted.append(_plain(s)))
     monkeypatch.setattr(climod, "_terminal_width_for_streaming", lambda: 100)
     monkeypatch.setattr(HermesCLI, "_scrollback_box_width", lambda self: 100)
     cli._stream_reasoning_delta(reasoning)
@@ -188,7 +188,7 @@ def test_long_user_message_soft_wraps_so_a_resize_reflows_it(monkeypatch):
         out = {}
         for width in (60, 140):
             emitted: list[str] = []
-            monkeypatch.setattr(climod, "_cprint", lambda s: emitted.append(_plain(s)))
+            monkeypatch.setattr(climod, "_cprint", lambda s, **_k: emitted.append(_plain(s)))
             monkeypatch.setattr(shutil, "get_terminal_size", lambda *_a, w=width: __import__("os").terminal_size((w, 40)))
             cli._print_user_message_preview(text)
             out[width] = [line for line in "\n".join(emitted).split("\n") if line.strip()]

@@ -505,20 +505,66 @@ def _painted_columns():
         return None
 
 
-def _record_output_history(text: str, *, force: bool = False) -> None:
+def _record_output_history(
+    text: str,
+    *,
+    force: bool = False,
+    open_line: bool = False,
+    box_rule: str | None = None,
+    box_label: str | None = None,
+) -> None:
     """Record ``text`` as painted now. ``force`` skips the recording check when the caller
-    made it at print-request time (the print itself was deferred to the app loop)."""
+    made it at print-request time (the print itself was deferred to the app loop).
+
+    ``open_line`` marks the last row as a reasoning line still growing, so the next paint
+    of that same line replaces it instead of storing a hard break.
+    ``box_rule`` marks that same row as a classic reasoning frame edge (``top`` or
+    ``bottom``) so a later resize can redraw it at the new width.
+    """
     from cli import _output_history_recording
     if force or _output_history_recording():
         width = _painted_columns()
+        parts = str(text).replace("\r", "").split("\n")
         lines = []
         # One entry per printed line: ``_pt_print`` ends every text with a newline, so "" and a
         # trailing "\n" are blank rows on screen and must count in the replay's row budget.
-        for line in str(text).replace("\r", "").split("\n"):
-            line = _PaintedLine(line)
+        last = len(parts) - 1
+        for index, part in enumerate(parts):
+            line = _PaintedLine(part)
             line.width = width
+            line.open_line = open_line and index == last
+            line.box_rule = box_rule if index == last else None
+            line.box_label = box_label if index == last else None
             lines.append(line)
         _cli()._OUTPUT_HISTORY.extend(lines)
+
+
+def _replace_open_history_line(text: str, *, open_line: bool) -> None:
+    """Replace the growing reasoning row. A closed row above it is left alone."""
+    history = _cli()._OUTPUT_HISTORY
+    if history and getattr(history[-1], "open_line", False):
+        history.pop()
+    _record_output_history(text, force=True, open_line=open_line)
+
+
+def _rewind_open_line(output, replaces: str | None) -> None:
+    """Move back over the previous paint of this reasoning line and erase it."""
+    if not replaces:
+        return
+    columns = _painted_columns() or 80
+    rewind = sum(_line_rows(part, columns) for part in str(replaces).split("\n"))
+    if rewind <= 0:
+        return
+    if output is not None and hasattr(output, "cursor_up"):
+        output.cursor_up(rewind)
+        output.erase_down()
+        output.reset_attributes()
+        output.flush()
+        return
+    if not sys.stdout.isatty():
+        return
+    sys.stdout.write(f"\x1b[{rewind}A\x1b[J")
+    sys.stdout.flush()
 
 
 # prompt_toolkit's zero-width ``\001…\002`` brackets first: a crop that split one would leak its
@@ -589,6 +635,249 @@ def _line_rows(line: str, columns: int) -> int:
     from prompt_toolkit.formatted_text import ANSI, fragment_list_width, to_formatted_text
     width = fragment_list_width(to_formatted_text(ANSI(line)))
     return max(1, -(-width // columns)) if columns and columns > 0 else 1
+
+
+def _visible_text(line: str) -> str:
+    return _ANSI_SEQUENCE_RE.sub("", str(line))
+
+
+def classic_box_rule(kind: str, columns: int, label: str | None = None) -> str:
+    """Classic reasoning frame edge at ``columns``. Same formula as the original paint."""
+    if kind == "bottom":
+        return "└" + ("─" * max(columns - 2, 0)) + "┘"
+    text = label or ""
+    fill = columns - 2 - len(text)
+    return "┌─" + text + ("─" * max(fill - 1, 0)) + "┐"
+
+
+def _history_items():
+    return list(_cli()._OUTPUT_HISTORY)
+
+
+def _write_history_items(items) -> None:
+    history = _cli()._OUTPUT_HISTORY
+    history.clear()
+    history.extend(items)
+
+
+def _painted_rule(kind: str, columns: int, label, fresh: str):
+    painted = _PaintedLine(f"{_DIM}{fresh}{_RST}")
+    painted.width = columns
+    painted.open_line = False
+    painted.box_rule = kind
+    painted.box_label = label
+    return painted
+
+
+def refresh_classic_box_history(columns: int) -> None:
+    """Point recorded classic rules at ``columns`` before a full history replay."""
+    if not isinstance(columns, int) or columns <= 0:
+        return
+    items = _history_items()
+    if not any(getattr(line, "box_rule", None) in ("top", "bottom") for line in items):
+        return
+    for index, line in enumerate(items):
+        kind = getattr(line, "box_rule", None)
+        if kind not in ("top", "bottom"):
+            continue
+        label = getattr(line, "box_label", None)
+        fresh = classic_box_rule(kind, columns, label)
+        items[index] = _painted_rule(kind, columns, label, fresh)
+    _write_history_items(items)
+
+
+def _terminal_cursor_row(output) -> int | None:
+    """0-based row of the real cursor. None when the terminal does not answer.
+
+    prompt_toolkit's own cursor is relative to its chrome, which is not the row the
+    rules sit on once a shrink has pushed the top of the box into scrollback.
+    """
+    import os
+    import select
+    import time
+    try:
+        fd = output.fileno()
+        if not os.isatty(fd):
+            return None
+    except Exception:
+        return None
+    try:
+        output.write_raw("\x1b[6n")
+        output.flush()
+        buf = b""
+        deadline = time.monotonic() + 0.08
+        while time.monotonic() < deadline and b"R" not in buf:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                break
+            chunk = os.read(fd, 64)
+            if not chunk:
+                break
+            buf += chunk
+        text = buf.decode("ascii", "replace")
+        mark = text.rfind("\x1b[")
+        if mark < 0:
+            return None
+        body = text[mark + 2:]
+        end = body.find("R")
+        if end < 0 or ";" not in body[:end]:
+            return None
+        row = int(body[:end].split(";", 1)[0])
+        return row - 1 if row >= 1 else None
+    except Exception:
+        return None
+
+
+def _line_cells(line: str) -> int:
+    from prompt_toolkit.formatted_text import ANSI, fragment_list_width, to_formatted_text
+    return fragment_list_width(to_formatted_text(ANSI(str(line))))
+
+
+def _classic_box_span(items, columns: int):
+    """The latest classic box, including the blank line the header paints above its top rule."""
+    tops = [i for i, line in enumerate(items) if getattr(line, "box_rule", None) == "top"]
+    bottoms = [i for i, line in enumerate(items) if getattr(line, "box_rule", None) == "bottom"]
+    if not tops or not bottoms:
+        return None
+    first, last = tops[-1], bottoms[-1]
+    if last < first:
+        return None
+    start = first - 1 if first > 0 and _visible_text(items[first - 1]) == "" else first
+    block = []
+    for index in range(start, last + 1):
+        line = items[index]
+        kind = getattr(line, "box_rule", None)
+        if kind in ("top", "bottom"):
+            label = getattr(line, "box_label", None)
+            fresh = classic_box_rule(kind, columns, label)
+            block.append(_painted_rule(kind, columns, label, fresh))
+            items[index] = block[-1]
+        else:
+            block.append(line)
+    return start, last, block
+
+
+def _redraw_classic_box_above_cursor(output, items, columns: int, cursor_row: int) -> None:
+    """Replace the visible tail of a classic box that a shrink pushed partly off screen."""
+    spanned = _classic_box_span(items, columns)
+    if spanned is None:
+        return
+    _start, _last, block = spanned
+    total = sum(_line_rows(line, columns) for line in block)
+    if total <= 0 or total > cursor_row:
+        return
+    top = cursor_row - total
+    output.write_raw("\x1b[1;1H")
+    for row in range(cursor_row):
+        output.write_raw("\x1b[2K")
+        if row != cursor_row - 1:
+            output.write_raw("\x1b[1B\r")
+    output.write_raw(f"\x1b[{top + 1};1H")
+    for line in block:
+        kind = getattr(line, "box_rule", None)
+        output.write_raw("\x1b[2K")
+        if kind in ("top", "bottom"):
+            output.write_raw("\x1b[?7l" + f"{_DIM}{_visible_text(line)}{_RST}" + "\x1b[?7h")
+            output.write_raw("\x1b[1B\r")
+            continue
+        if str(line):
+            output.write_raw("\x1b[?7h")
+            output.write_raw(str(line))
+        cells = _line_cells(line)
+        if not (columns and cells and cells % columns == 0):
+            output.write_raw("\x1b[1B\r")
+        else:
+            output.write_raw("\r")
+    output.write_raw(f"\x1b[{cursor_row + 1};1H")
+    output.flush()
+    _write_history_items(items)
+
+
+def retarget_classic_box_rules(app) -> None:
+    """Redraw classic reasoning rules in place at the terminal's current width."""
+    try:
+        _retarget_classic_box_rules(app)
+    except Exception:
+        return
+
+
+def _retarget_classic_box_rules(app) -> None:
+    try:
+        size = app.output.get_size()
+        columns, pane_rows = size.columns, size.rows
+    except Exception:
+        return
+    if not isinstance(columns, int) or columns <= 0 or not isinstance(pane_rows, int):
+        return
+    items = _history_items()
+    rules = [i for i, line in enumerate(items) if getattr(line, "box_rule", None) in ("top", "bottom")]
+    if not rules:
+        return
+    try:
+        cursor = app.renderer._cursor_pos
+        cursor_y, origin_x = cursor.y, cursor.x
+    except Exception:
+        return
+    if not isinstance(cursor_y, int) or cursor_y < 0 or not isinstance(origin_x, int):
+        return
+    output = app.output
+    below = [0] * len(items)
+    running = 0
+    for index in range(len(items) - 1, -1, -1):
+        below[index] = running
+        running += _line_rows(items[index], columns)
+    cursor_row = _terminal_cursor_row(output)
+    if isinstance(cursor_row, int):
+        for index in rules:
+            line = items[index]
+            fresh = classic_box_rule(line.box_rule, columns, getattr(line, "box_label", None))
+            old_rows = _line_rows(line, columns)
+            if _visible_text(line) == fresh and old_rows == 1:
+                continue
+            gap = below[index]
+            up = cursor_y + 1 + gap + old_rows - 1
+            if up > cursor_row:
+                _redraw_classic_box_above_cursor(output, items, columns, cursor_row)
+                return
+    removed = 0
+    changed = False
+    for index in reversed(rules):
+        line = items[index]
+        kind = line.box_rule
+        label = getattr(line, "box_label", None)
+        fresh = classic_box_rule(kind, columns, label)
+        old_rows = _line_rows(line, columns)
+        if _visible_text(line) == fresh and old_rows == 1:
+            continue
+        gap = below[index] - removed
+        if gap < 0:
+            gap = 0
+        up = cursor_y + 1 + gap + old_rows - 1
+        if up <= 0 or up >= pane_rows:
+            continue
+        extra = max(0, old_rows - 1)
+        output.cursor_up(up)
+        output.write_raw("\r\x1b[K\x1b[?7l" + f"{_DIM}{fresh}{_RST}" + "\x1b[?7h")
+        if extra:
+            output.write_raw(f"\x1b[1B\r\x1b[{extra}M")
+            down = gap + cursor_y
+            if down:
+                output.cursor_down(down)
+            output.write_raw("\r")
+        else:
+            output.cursor_down(up)
+            output.write_raw("\r")
+        if origin_x:
+            output.cursor_forward(origin_x)
+        output.flush()
+        items[index] = _painted_rule(kind, columns, label, fresh)
+        removed += extra
+        changed = True
+    if changed:
+        _write_history_items(items)
 
 
 def _output_tail_fitting(lines: list[str], max_rows: int, columns: int, painted: bool = True) -> list[str]:
@@ -744,7 +1033,15 @@ def _paint_held(seq: int, paint, app=None) -> bool:
         return True
 
 
-def _cprint(text: str, *, raw: str = ""):
+def _cprint(
+    text: str,
+    *,
+    raw: str = "",
+    replaces: str | None = None,
+    open_line: bool = False,
+    box_rule: str | None = None,
+    box_label: str | None = None,
+):
     """Print ANSI text through prompt_toolkit's renderer (patch_stdout swallows raw ANSI).
 
     From a background thread while an Application runs, a direct print races the input
@@ -758,16 +1055,37 @@ def _cprint(text: str, *, raw: str = ""):
     recording = _output_history_recording()
     seq = next(_PAINT_SEQ)
 
+    def _remember():
+        # ki66-reasoning-softwrap: a growing reasoning line replaces its own history row.
+        if not recording:
+            return
+        if replaces is not None:
+            _replace_open_history_line(text, open_line=open_line)
+            return
+        if open_line:
+            _record_output_history(
+                text, force=True, open_line=True, box_rule=box_rule, box_label=box_label)
+            return
+        _record_output_history(text, force=True, box_rule=box_rule, box_label=box_label)
+
     def _painted(paint):
         # Recorded when painted, not when requested: a redraw replaying the history must
         # neither print rows still queued for the loop nor size them at a stale width.
         def _paint():
-            if recording:
-                _record_output_history(text, force=True)
+            _remember()
             paint()
         return _paint
-    paint_pt = _painted(lambda: _pt_print(_ansi_with_raw(text, raw)))
-    paint_fallback = _painted(lambda: _pt_print_ansi(text, raw))
+
+    def _paint_pt():
+        _rewind_open_line(None, replaces)
+        _pt_print(_ansi_with_raw(text, raw))
+
+    def _paint_fallback():
+        _rewind_open_line(None, replaces)
+        _pt_print_ansi(text, raw)
+
+    paint_pt = _painted(_paint_pt)
+    paint_fallback = _painted(_paint_fallback)
 
     try:
         from prompt_toolkit.application import get_app_or_none, run_in_terminal
@@ -805,6 +1123,7 @@ def _cprint(text: str, *, raw: str = ""):
         return
 
     def _print_now():
+        _rewind_open_line(app.output, replaces)
         from prompt_toolkit.formatted_text import to_formatted_text
         from prompt_toolkit.renderer import print_formatted_text as _paint_formatted_text
         from prompt_toolkit.styles import Style
@@ -839,6 +1158,10 @@ def _cprint(text: str, *, raw: str = ""):
             paint_now()
             renderer.reset()
             printed = sum(_line_rows(line, columns) for line in text.split("\n"))
+            if replaces:
+                # The open line was already charged. Count only the rows it grew by.
+                printed -= sum(_line_rows(part, columns) for part in str(replaces).split("\n"))
+                printed = max(0, printed)
             if app.output.get_size().columns != columns:
                 _add_suspect_rows(printed)
             if floor is not None:
